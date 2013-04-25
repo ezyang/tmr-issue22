@@ -1,20 +1,32 @@
-Woof  :=   Form(+)
+Woof         :=   Form(+)
 
-Form  :=   Special  |  Application  |  
-           SYMBOL   |  STRING       |
-           NUMBER
+Form         :=   Special  |  Application  |  Symbol   |  
+                  String   |  Number
            
-Special  :=  OCURLY  ( Define  |  Lambda )  CCURLY
--- leave Cond and List as exercise for reader
+Special      :=  '{'  ( Define  |  Lambda )  '}'
 
-Define   :=  SYMBOL('define')  String(?)  SYMBOL  Form
--- allow optional docstring
--- can define symbol once per scope
+Define       :=  'define'  String(?)  Symbol  Form
 
-Lambda   :=  OCURLY  (sepBy0 SYMBOL COMMA)  CCURLY  Form(+)
--- and make lambda's symbols unique
+Lambda       :=  'lambda'  '{'  Symbol(*)  '}'  Form(+)
 
-Application  :=  OPAREN  Form(+)  CPAREN
+Application  :=  '('  Form(+)  ')'
+
+Number       :=  \d(+)
+
+Symbol       :=  ( \w  |  Schar)  ( \w  |  \d  |  Schar)(*)
+
+Schar        :=  (oneof "<>!@#$%^&*_-+=|:?")
+
+String       :=  '"'  ( Escape  |  (not  ( '"'  |  '\')))(*)  '"'
+
+Escape       :=  '\'  ( '"'  |  '\' )
+
+-- whitespace and comments may appear in any amount before any token.
+--   tokens are:  {, }, (, ), Symbol, String, Number
+Whitespace  :=  \s+
+
+Comment     :=  ';'  (not '\n')(*)
+
 
 -- errors:
 --  1. redefined symbol
@@ -24,39 +36,11 @@ Application  :=  OPAREN  Form(+)  CPAREN
 --  5. bad define/lambda syntax
 --  6. empty application i.e. '()'
 --  7. non-comma-separated parameter names
-
-
--- Tokens
-
-NUMBER  :=  \d+
-
-SYMBOL  :=  ( \w  |  schar)  ( \w  |  \d  |  schar)(*)
-
-schar   :=  (oneof "<>!@#$%^&*_-+=|:?")
-
-STRING  :=  '"'  ( escape  |  (not  ( '"'  |  '\')))(*)  '"'
-
-escape  :=  '\'  ( '"'  |  '\' )
-
-COMMA   :=  ','
-
-OCURLY  :=  '{'
-
-CCURLY  :=  '}'
-
-OPAREN  :=  '('
-
-CPAREN  :=  ')'
-
-WHITESPACE  :=  \s+
-
-COMMENT     :=  ';'  (not '\n')(*)
--- extension to other newline characters left as exercise for reader
-
 -- errors:
 --   1. unclosed string
 --   2. unrecognized char
 --   3. invalid escape
+
 
 
 example:
@@ -72,4 +56,3 @@ example:
     ({lambda {x y} (+ y (- x 3))} (+ x 2) x)
     ;;
     (eq? (take 2 "abcd\"\\e") "ab")
-
