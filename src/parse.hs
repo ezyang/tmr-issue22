@@ -4,8 +4,6 @@
 import Control.Monad.State       (MonadState (..), StateT(..), State)
 import Control.Applicative       (Applicative(..), Alternative(..), liftA2)
 import Data.List                 (nub)
--- import Control.Monad.Trans.Maybe (MaybeT     (..))
--- import Data.Functor.Identity     (Identity   (..))
 
 ------------------------------------------------------------------------------
 -- parser combinators
@@ -137,8 +135,8 @@ lambda =
     check (== "lambda") symbol    >>
     toc                           >>
     check distinct (many symbol)  >>= \params ->
-    some form                     >>= \bodies ->
     tcc                           >>
+    some form                     >>= \bodies ->
     return (ALambda params bodies)
   where
     distinct names = length names == length (nub names)
