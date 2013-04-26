@@ -2,10 +2,13 @@
              , FlexibleContexts           #-}
 
 import Control.Monad.State       (MonadState (..), StateT(..), State)
+import Control.Monad.Error       (MonadError (..), ErrorT(..))
 import Control.Applicative       (Applicative(..))
 import Data.List                 (nub)
-import Parser
+import Data.Functor.Identity     (Identity(..))
+import Parser  
 import Classes
+import Instances                  
 
 ------------------------------------------------------------------------------
 -- AST, tokens, position
@@ -55,8 +58,8 @@ symbol = munch (fmap (:) first <*> rest)
     first = fmap chr $ satisfy (flip elem symbolOpens . chr)
     rest = many0 (first <+> digit)
     
-string :: (MonadState [Token] m, Plus m, Switch m) => m String
-string = munch (dq *> many0 char <* dq)
+-- string :: (MonadState [Token] m, Plus m, Switch m) => m String
+string = munch (dq *> commit "oops -- string" (many0 char) <* dq)
   where
     dq = character '"'
     char = fmap chr (escape <+> normal)
@@ -65,13 +68,13 @@ string = munch (dq *> many0 char <* dq)
     slash_or_dq = character '\\' <+> character '"'
 
 
-whitespace :: (MonadState [Token] m, Plus m, Switch m) => m [Token]
+-- whitespace :: (MonadState [Token] m, Plus m, Switch m) => m [Token]
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f" . chr)
 
-comment :: (MonadState [Token] m, Plus m, Switch m) => m [Token]
+-- comment :: (MonadState [Token] m, Plus m, Switch m) => m [Token]
 comment = character ';' *> many0 (not1 $ character '\n')
 
-munch :: (MonadState [Token] m, Plus m, Switch m) => m a -> m a
+-- munch :: (MonadState [Token] m, Plus m, Switch m) => m a -> m a
 munch p = many0 (whitespace <+> comment) *> p
 
 top = munch oparen
@@ -79,16 +82,16 @@ tcp = munch cparen
 toc = munch ocurly
 tcc = munch ccurly
 
-tsymbol :: (MonadState [Token] m, Plus m, Switch m) => m AST
+-- tsymbol :: (MonadState [Token] m, Plus m, Switch m) => m AST
 tsymbol = fmap ASymbol symbol
 
-tstring :: (MonadState [Token] m, Plus m, Switch m) => m AST
+-- tstring :: (MonadState [Token] m, Plus m, Switch m) => m AST
 tstring = fmap AString string
 
-tnumber :: (MonadState [Token] m, Plus m, Switch m) => m AST
+-- tnumber :: (MonadState [Token] m, Plus m, Switch m) => m AST
 tnumber = fmap (ANumber . read) number
 
-application :: (MonadState [Token] m, Plus m, Switch m) => m AST
+-- application :: (MonadState [Token] m, Plus m, Switch m) => m AST
 application =
     top        >>= \open ->
     form       >>= \op ->
@@ -96,7 +99,7 @@ application =
     tcp        >>
     return (AApp op args)
     
-lambda :: (MonadState [Token] m, Plus m, Switch m) => m AST
+-- lambda :: (MonadState [Token] m, Plus m, Switch m) => m AST
 lambda =
     check (== "lambda") symbol    >>
     toc                           >>
@@ -107,7 +110,7 @@ lambda =
   where
     distinct names = length names == length (nub names)
 
-define :: (MonadState [Token] m, Plus m, Switch m) => m AST
+-- define :: (MonadState [Token] m, Plus m, Switch m) => m AST
 define =
     check (== "define") symbol   *>
     pure ADefine                <*>
@@ -115,22 +118,31 @@ define =
     symbol                      <*>
     form
     
-special :: (MonadState [Token] m, Plus m, Switch m) => m AST
+-- special :: (MonadState [Token] m, Plus m, Switch m) => m AST
 special = 
     toc  >>= \open ->
     (lambda <+> define) >>= \val ->
     tcc  >>
     return val
     
-form :: (MonadState [Token] m, Plus m, Switch m) => m AST
+form :: (MonadState [Token] m, 
+         MonadError String m,
+         Plus m, Switch m) => m AST
 form = foldr (<+>) zero [tsymbol, tnumber, tstring, application, special]
 
-parser :: (MonadState [Token] m, Plus m, Switch m) => m [AST]
-parser = many0 form <* end
+-- parser :: (MonadState [Token] m, Plus m, Switch m) => m [AST]
+parser = many0 form <* commit "poopy" end
 
-runParser :: Parse1a t a -> [t] -> Maybe (a, [t])
-runParser p xs = runStateT p xs
+instance (Functor m, Switch m) => Switch (ErrorT e m) where
+  switch (ErrorT e) =  ErrorT (fmap Right $ switch e)
 
+runParse :: Parse e t a -> [t] -> Maybe (Either e (a, [t]))
+runParse p xs = runErrorT (runStateT p xs)
 
--- [t] -> Maybe (a, [t])
-type Parse1a t a = StateT [t] Maybe a 
+-- m (Maybe a)
+-- m (Either e a)
+-- s -> m (a, s)
+
+-- Maybe over Either :->  Either e (Maybe a)
+-- Either over Maybe :->  Maybe (Either e a)
+type Parse e t a = StateT [t] (ErrorT e Maybe) a
