@@ -6,32 +6,8 @@ import Control.Applicative       (Applicative(..))
 import Data.List                 (nub)
 import Parser
 import Classes
+import Common
 
-------------------------------------------------------------------------------
--- AST, tokens, position
-
-data AST
-    = ANumber Integer
-    | ASymbol String
-    | AString String
-    | ALambda [String] [AST]
-    | ADefine (Maybe String) String AST
-    | AApp    AST  [AST]
-  deriving (Show, Eq)
-
-type Token = (Char, Int, Int)
-chr  (a, _, _)  =  a
-line (_, b, _)  =  b
-col  (_, _, c)  =  c
-
-countLineCol :: [Char] -> [Token]
-countLineCol = reverse . snd . foldl f ((1, 1), [])
-  where
-    f ((line, col), ts) '\n' = ((line + 1, 1), ('\n', line, col):ts)
-    f ((line, col), ts)  c   = ((line, col + 1), (c, line, col):ts)
-
-------------------------------------------------------------------------------
--- basic parsers
 
 character :: (MonadState [Token] m, Plus m) => Char -> m Token
 character c = satisfy ((==) c . chr)
@@ -128,9 +104,8 @@ form = foldr (<+>) zero [tsymbol, tnumber, tstring, application, special]
 parser :: (MonadState [Token] m, Plus m, Switch m) => m [AST]
 parser = many0 form <* end
 
-runParser :: Parse1a t a -> [t] -> Maybe (a, [t])
+
+type Parse t a = StateT [t] Maybe a 
+
+runParser :: Parse t a -> [t] -> Maybe (a, [t])
 runParser p xs = runStateT p xs
-
-
--- [t] -> Maybe (a, [t])
-type Parse1a t a = StateT [t] Maybe a 

@@ -32,16 +32,6 @@ check f p =
 satisfy :: (MonadState [t] m, Plus m) => (t -> Bool) -> m t
 satisfy = flip check item
 
-class Switch f where
-  switch :: f a -> f ()
-  
-instance Switch Maybe where
-  switch (Just _) = Nothing
-  switch Nothing  = Just ()
-  
-instance (Functor m, Switch m) => Switch (StateT s m) where
-  switch (StateT f) = StateT (\s -> fmap (const ((), s)) . switch $ f s)
-
 not1 :: (MonadState [t] m, Plus m, Switch m) => m a -> m t
 not1 p = switch p *> item
 

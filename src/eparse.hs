@@ -3,38 +3,18 @@
 
 import Control.Monad.State       (MonadState (..), StateT(..), State)
 import Control.Monad.Error       (MonadError (..), ErrorT(..))
+import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Applicative       (Applicative(..))
 import Data.List                 (nub)
 import Data.Functor.Identity     (Identity(..))
-import Parser  
+import Parser
 import Classes
-import Instances                  
+import Instances
+import Common
 
-------------------------------------------------------------------------------
--- AST, tokens, position
 
-data AST
-    = ANumber Integer
-    | ASymbol String
-    | AString String
-    | ALambda [String] [AST]
-    | ADefine (Maybe String) String AST
-    | AApp    AST  [AST]
-  deriving (Show, Eq)
+type Error = (String, Token)
 
-type Token = (Char, Int, Int)
-chr  (a, _, _)  =  a
-line (_, b, _)  =  b
-col  (_, _, c)  =  c
-
-countLineCol :: [Char] -> [Token]
-countLineCol = reverse . snd . foldl f ((1, 1), [])
-  where
-    f ((line, col), ts) '\n' = ((line + 1, 1), ('\n', line, col):ts)
-    f ((line, col), ts)  c   = ((line, col + 1), (c, line, col):ts)
-
-------------------------------------------------------------------------------
--- basic parsers
 
 character :: (MonadState [Token] m, Plus m) => Char -> m Token
 character c = satisfy ((==) c . chr)
@@ -59,7 +39,9 @@ symbol = munch (fmap (:) first <*> rest)
     rest = many0 (first <+> digit)
     
 -- string :: (MonadState [Token] m, Plus m, Switch m) => m String
-string = munch (dq *> commit "oops -- string" (many0 char) <* dq)
+string = munch (dq          >>= \open ->
+                many0 char  <* 
+                commit ("unclosed string literal", open) dq)
   where
     dq = character '"'
     char = fmap chr (escape <+> normal)
@@ -93,56 +75,61 @@ tnumber = fmap (ANumber . read) number
 
 -- application :: (MonadState [Token] m, Plus m, Switch m) => m AST
 application =
-    top        >>= \open ->
-    form       >>= \op ->
-    many0 form  >>= \args ->
-    tcp        >>
+    top            >>= \open ->
+    operator open  >>= \op ->
+    many0 form     >>= \args ->
+    close open     >>
     return (AApp op args)
+  where
+    operator open = commit ("missing application operator", open) form
+    close open = commit ("missing application close", open) tcp
     
--- lambda :: (MonadState [Token] m, Plus m, Switch m) => m AST
 lambda =
-    check (== "lambda") symbol    >>
-    toc                           >>
-    check distinct (many0 symbol)  >>= \params ->
-    tcc                           >>
-    many1 form                     >>= \bodies ->
+    check (== "lambda") symbol  >>
+    toc                         >>= \open ->
+    pars open                   >>= \params ->
+    close open                  >>
+    body open                   >>= \bodies ->
     return (ALambda params bodies)
   where
+    pars open = 
+        many0 symbol >>= \them -> 
+        if distinct them then return them
+                         else throwError ("duplicate parameter names", open)
     distinct names = length names == length (nub names)
+    close open = commit ("missing parameter list close", open) tcc
+    body open = commit ("missing 1 or more lambda bodies", open) (many1 form)
 
--- define :: (MonadState [Token] m, Plus m, Switch m) => m AST
-define =
-    check (== "define") symbol   *>
-    pure ADefine                <*>
-    optionalM string            <*>
-    symbol                      <*>
-    form
+define open =
+    check (== "define") symbol    *>
+    pure ADefine                 <*>
+    optionalM string             <*>
+    sym                          <*>
+    for
+  where
+    sym = commit ("define: missing symbol", open) symbol
+    for = commit ("define: missing form", open) form
     
--- special :: (MonadState [Token] m, Plus m, Switch m) => m AST
 special = 
-    toc  >>= \open ->
-    (lambda <+> define) >>= \val ->
-    tcc  >>
+    toc          >>= \open ->
+    spec open    >>= \val ->
+    close open   >>
     return val
+  where
+    spec open = commit ("unable to parse special form", open) (lambda <+> define open)
+    close open = commit ("missing special form close", open) tcc
     
-form :: (MonadState [Token] m, 
-         MonadError String m,
-         Plus m, Switch m) => m AST
 form = foldr (<+>) zero [tsymbol, tnumber, tstring, application, special]
 
--- parser :: (MonadState [Token] m, Plus m, Switch m) => m [AST]
-parser = many0 form <* commit "poopy" end
+parser = many0 form <* endCheck
+  where
+    endCheck = 
+        many0 (whitespace <+> comment) *>
+        get >>= \xs -> case xs of
+                            (t:_) -> throwError ("unparsed input", t)
+                            []    -> pure ()
 
-instance (Functor m, Switch m) => Switch (ErrorT e m) where
-  switch (ErrorT e) =  ErrorT (fmap Right $ switch e)
+runParse :: Parse e t a -> [t] -> Either' e (Maybe (a, [t]))
+runParse p xs = runMaybeT (runStateT p xs)
 
-runParse :: Parse e t a -> [t] -> Maybe (Either e (a, [t]))
-runParse p xs = runErrorT (runStateT p xs)
-
--- m (Maybe a)
--- m (Either e a)
--- s -> m (a, s)
-
--- Maybe over Either :->  Either e (Maybe a)
--- Either over Maybe :->  Maybe (Either e a)
-type Parse e t a = StateT [t] (ErrorT e Maybe) a
+type Parse e t a = StateT [t] (MaybeT (Either' e)) a
