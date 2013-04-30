@@ -24,7 +24,7 @@ digit = fmap chr $ satisfy (flip elem ['0' .. '9'] . chr)
 
 number = munch $ many1 digit
 
-symbolOpens = ['a' .. 'z'] ++ ['A' .. 'Z'] ++ "!@#$%^&*_-+=:?<>"
+symbolOpens = ['a' .. 'z'] ++ ['A' .. 'Z'] ++ "!@#$%^&*_-+=:?<>/"
 
 symbol = munch (fmap (:) first <*> rest)
   where

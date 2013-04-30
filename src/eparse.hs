@@ -31,7 +31,7 @@ digit = fmap chr $ satisfy (flip elem ['0' .. '9'] . chr)
 
 number = munch $ many1 digit
 
-symbolOpens = ['a' .. 'z'] ++ ['A' .. 'Z'] ++ "!@#$%^&*_-+=:?<>"
+symbolOpens = ['a' .. 'z'] ++ ['A' .. 'Z'] ++ "!@#$%^&*_-+=:?<>/"
 
 symbol = munch (fmap (:) first <*> rest)
   where
@@ -133,3 +133,19 @@ runParse :: Parse e t a -> [t] -> Either' e (Maybe (a, [t]))
 runParse p xs = runMaybeT (runStateT p xs)
 
 type Parse e t a = StateT [t] (MaybeT (Either' e)) a
+
+test = "{define \n\
+\  f \n\
+\  {lambda {x y}\n\
+\    (+ x y)}}\n\
+\\n\
+\(* 3 (/ 4 1))\n\
+\\n\
+\; what?? no !!!\n\
+\\n\
+\{define\n\
+\  \"very important number\"\n\
+\  n\n\
+\  ; seriously, it's really important\n\
+\  22}\n\
+\"
