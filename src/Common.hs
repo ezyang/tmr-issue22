@@ -6,6 +6,7 @@ module Common (
   , line
   , col
   , countLineCol
+  , example
   
 ) where
 
@@ -31,3 +32,19 @@ countLineCol = reverse . snd . foldl f ((1, 1), [])
     f ((line, col), ts) '\n' = ((line + 1, 1), ('\n', line, col):ts)
     f ((line, col), ts)  c   = ((line, col + 1), (c, line, col):ts)
 
+
+example = "{define \n\
+\  f \n\
+\  {lambda {x y}\n\
+\    (+ x y)}}\n\
+\\n\
+\(* 3 (/ 4 1))\n\
+\\n\
+\; what?? no !!!\n\
+\\n\
+\{define\n\
+\  \"very important number\"\n\
+\  n\n\
+\  ; seriously, it's really important\n\
+\  22}\n\
+\"

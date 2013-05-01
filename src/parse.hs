@@ -7,10 +7,15 @@ import Data.List                 (nub)
 import Parser
 import Classes
 import Common
+import Instances
 
 
 character :: (MonadState [Token] m, Plus m) => Char -> m Token
 character c = satisfy ((==) c . chr)
+
+munch :: (MonadState [Token] m, Plus m, Switch m) => m a -> m a
+munch p = many0 (whitespace <+> comment) *> p
+
 
 ocurly = character '{'
 
@@ -46,9 +51,6 @@ whitespace = many1 $ satisfy (flip elem " \n\t\r\f" . chr)
 
 comment :: (MonadState [Token] m, Plus m, Switch m) => m [Token]
 comment = character ';' *> many0 (not1 $ character '\n')
-
-munch :: (MonadState [Token] m, Plus m, Switch m) => m a -> m a
-munch p = many0 (whitespace <+> comment) *> p
 
 top = munch oparen
 tcp = munch cparen
@@ -102,7 +104,7 @@ form :: (MonadState [Token] m, Plus m, Switch m) => m AST
 form = foldr (<+>) zero [tsymbol, tnumber, tstring, application, special]
 
 parser :: (MonadState [Token] m, Plus m, Switch m) => m [AST]
-parser = many0 form <* end
+parser = many0 form <* munch end
 
 
 type Parse t a = StateT [t] Maybe a 
