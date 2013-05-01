@@ -23,9 +23,9 @@ Escape       :=  '\'  ( '"'  |  '\' )
 
 -- whitespace and comments may appear in any amount before any token.
 --   tokens are:  {, }, (, ), Symbol, String, Number
-Whitespace  :=  \s+
+Whitespace   :=  \s+
 
-Comment     :=  ';'  (not '\n')(*)
+Comment      :=  ';'  (not '\n')(*)
 
 
 -- errors:
