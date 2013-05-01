@@ -46,7 +46,7 @@ Parser combinator libraries typically include a set of basic parsers and a
 set of combinators for combining little parsers into big ones.  Parsers are
 typically functions whose type is something like:
 \begin{verbatim}
-[t] -> m ([t], a)
+[t] -> m (a, [t])
 \end{verbatim}
 where t is the token type, a is the result type, and m represents some
 computational effects.
@@ -54,13 +54,13 @@ A very simple parser succeeds, consuming a single token, when the token stream
 is not empty, and fails otherwise.  We can make the substitutions t -> Char,
 m -> Maybe, and a -> Char and implement the function:
 \begin{verbatim}
-    item :: [Char] -> Maybe ([Char], Char)
-    item (t:ts) = Just (ts, t)
+    item :: [Char] -> Maybe (Char, [Char])
+    item (t:ts) = Just (t, ts)
     item []     = Nothing
     
     -- examples
     ghci$ item "abcde"
-    Just ("bcde", 'a')
+    Just ('a', "bcde")
     
     ghci$ item []
     Nothing
@@ -70,12 +70,12 @@ We can also come up with a simple combinator that takes a parser and a function
 as input, and succeeds if the parser succeeds and the function applied to the
 parser's result succeeds:
 \begin{verbatim}
-    check :: (a -> Bool) -> ([Char] -> Maybe ([Char], a)) -> [Char] -> Maybe ([Char], a)
-    check f p = p >>= \(ts, x) -> if (f x) then Just (ts, x) else Nothing
+    check :: (a -> Bool) -> ([Char] -> Maybe (a, [Char])) -> [Char] -> Maybe (a, [Char])
+    check f p = p >>= \(x, ts) -> if (f x) then Just (x, ts) else Nothing
     
     -- examples
     ghci$ check (== 'a') item "abcde"
-    Just ("bcde", 'a')
+    Just ('a', "bcde")
     
     ghci$ check (== 'b') item "abcde"
     Nothing
@@ -86,12 +86,26 @@ parsers and combinators will be the topic of the rest of the article.
 
 
 \section{Monad transformers}
+Monad transformers are a technique for combining monads to form new monads.
+The motivation behind them is that while single monads are quite useful, oftentimes
+the semantics of multiple monads are required simultaneously; it is then desirable
+to have a modular approach for creating combined monads.
+
+There are multiple to approaches to combining monads and to monad transformers
+themselves, but we'll follow that of the standard transformers/mtl library, since
+it's easy to obtain, easy to use, and quite effective in practice.
+
+Along the way, we'll also explore some of the consequences of combining monads,
+both with respect to semantics and to the definition of the Haskell language.  We'll
+also bump in to some of the limitations, trade-offs and design decisions of the 
+transformer/mtl library.
+
 
 \section{Introducing Woof:  a Simple Lisp}
-
-The following examples will all use Woof, a simple dialect of Lisp,
+The simple language we'll use as a motivation for building parsers is 
+Woof, a simple dialect of Lisp.  We'll be 
 progressively adding features to a simplistic initial implementation
-to create a usable parser.
+on our way to creating a practical, feature-rich and usable parser.
 
 The language definition in pseudo-BNF is:
 
@@ -129,17 +143,38 @@ Tokens are:  {, }, (, ), Symbol, String, and Number.
 
 
 
-\section{Example 1: recognizing}
+\section{Example 1: Recognition and Tree-Building}
+The first parser we build will be responsible for determining whether input
+text conforms to the language definition and simultaneously build an 
+Abstract Syntax Tree representing of the structure of the recognized input.
 
-\subsection{An Elementary Parser}
-The basic types of parsers will be something like
-\begin{verbatim}[t] -> m ([t], a)\end{verbatim}, or, a function that consumes
-part of a list of tokens of type t with computational effects m and
-result a.
-A very basic and fundamental parser is the one that succeeds whenever
-the list of tokens is not empty, consuming one token and presenting it
-as the result, and fails when the list is empty.  We'll call this item,
-and we can easily implement it in terms of the MonadState type class:
+Here's the AST definition we'll use:
+\begin{verbatim}
+data AST
+    = ANumber Integer
+    | ASymbol String
+    | AString String
+    | ALambda [String] [AST]
+    | ADefine (Maybe String) String AST
+    | AApp    AST  [AST]
+  deriving (Show, Eq)
+\end{verbatim}
+Plus we'll need a type for our parsers.  We'll use the basic type mentioned 
+above -- [t] -> m (a, [t]) -- as our starting point.  As luck would have it, that
+corresponds to our first monad transformer:  StateT (Control.Monad.State), so we
+can write:
+\begin{verbatim}
+type Parser a = StateT [Char] Maybe a
+\end{verbatim}
+Which means that our Parser is a State monad transformer, with the Maybe type
+as its underlying Monad parameter.
+
+Now let's get down to the business of building parsers, starting with parsers
+for our most basic syntactic elements:  tokens.
+These include the four braces, symbols, strings, numbers, whitespace, and comments.
+To recognize braces, we need to re-implement the item and check combinators that
+we did before.  Fortunately, using the StateT transformer makes it simpler
+to do so:
 \begin{verbatim}
 item :: (MonadState [t] m, Plus m) => m t
 item =
@@ -147,10 +182,8 @@ item =
                         (t:ts) -> put ts *> pure t;
                         []     -> zero;
 \end{verbatim}
-
-\subsection{Token Parsers}
-Let's start with parsers for recognizing our most basic syntactic elements:  tokens.
-These include the seven listed above, as well as whitespace and comments.
+Although we now also need to discuss the Plus type class, why we need it instead of
+Alternative, and what its instances are.
 
 
 \section{Example 2: error-reporting}
