@@ -1,0 +1,69 @@
+% -*- LaTeX -*-
+\documentclass{tmr}
+
+\usepackage{mflogo}
+
+%include polycode.fmt
+
+\title{Parsers or something}
+\author{Matt Fenwick\email{mfenwick100@gmail.com}}
+
+\begin{document}
+
+
+\begin{introduction}
+\end{introduction}
+
+\section{Parser combinators}
+
+\section{Monad transformers}
+
+\section{Example 1: recognizing}
+
+\section{Example 2: error-reporting}
+
+\section{Example 3: whitespace/comment-logging}
+
+
+
+\section{Verbatim and code}
+
+Um wow this is code:
+\begin{spec}
+class Foo f where
+  foo :: f a -> f b -> f (a,b)
+  -- use for wibbling
+
+bar :: Int -> Bool
+bar  23  =  False
+bar  x   =  not (x `elem` [1,2,3])
+
+\end{spec}
+that was some pretty code.
+
+
+\section{Transformer instance semantics}
+
+Pass-through vs. deal-with, examples of each
+
+
+\section{Limitations of the Monad Transformer Approach}
+
+1. Exact vs. relative layer order; 
+2. one instance per stack, even when more than one is applicable --
+how to specify which one?
+3. an inappropriate instance higher-up in the stack can mask a 
+desired instance lower down in the stack -- that's why we had to
+create a replacement for the Alternative type class and provide
+some new instances for it -- to be able to use the right instances
+
+
+
+\section{Conclusion}
+
+Parser combinators and monad transformers FTW!
+
+
+\bibliography{Author}
+
+\end{document}
