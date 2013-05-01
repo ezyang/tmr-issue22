@@ -5,41 +5,159 @@
 
 %include polycode.fmt
 
-\title{Parsers or something}
+\title{Combinator Parsers:  a Monad Transformer Approach}
 \author{Matt Fenwick\email{mfenwick100@gmail.com}}
 
 \begin{document}
 
 
 \begin{introduction}
+Parsing, or "the process of analysing a 
+string of symbols according to the rules of a formal grammar" (Wikipedia),
+is one of the most fundamental and interesting problems in programming.
+The general goal of parsing is to build a tree representing the structure
+of the parsed input; further operations such as interpretation or
+code generations are then performed on the tree.
+
+However, in addition to recognizing a stream of tokens and building a parse
+tree, a practical parser has many additional duties.  If parsing fails,
+the location and cause of the failure must be accurately reported so that
+the user can address the problem; specially formatted comments may be need
+to be capture in order to be used
+to build hyperlinked code documentation, instead of simply thrown away; 
+failed parses may be accompanied by partial results to save the cost
+of reparsing the input before the error.
+
+Monad transformers offer an elegant solution, both to the problem of 
+implementing parser combinators themselves, as well as to the issue of
+building clean and modular parsers that support multiple effects.
+We'll explore what they have to offer using a simple language -- Woof --
+and build a number of separate parsers for it!
 \end{introduction}
 
-\section{Parser combinators}
+
+\section{Parser Combinators}
+Parser combinators have long been used for parsing in the 
+functional programming community, represent a powerful and simple solution.
+Their main advantages are ability to deal with complicated formats (see
+Chomsky levels), language integration, and the declarativeness and
+succinctness of the resulting parsers.
+Parser combinator libraries typically include a set of basic parsers and a
+set of combinators for combining little parsers into big ones.  Parsers are
+typically functions whose type is something like:
+\begin{verbatim}
+[t] -> m ([t], a)
+\end{verbatim}
+where t is the token type, a is the result type, and m represents some
+computational effects.
+A very simple parser succeeds, consuming a single token, when the token stream
+is not empty, and fails otherwise.  We can make the substitutions t -> Char,
+m -> Maybe, and a -> Char and implement the function:
+\begin{verbatim}
+    item :: [Char] -> Maybe ([Char], Char)
+    item (t:ts) = Just (ts, t)
+    item []     = Nothing
+    
+    -- examples
+    ghci$ item "abcde"
+    Just ("bcde", 'a')
+    
+    ghci$ item []
+    Nothing
+\end{verbatim}
+
+We can also come up with a simple combinator that takes a parser and a function
+as input, and succeeds if the parser succeeds and the function applied to the
+parser's result succeeds:
+\begin{verbatim}
+    check :: (a -> Bool) -> ([Char] -> Maybe ([Char], a)) -> [Char] -> Maybe ([Char], a)
+    check f p = p >>= \(ts, x) -> if (f x) then Just (ts, x) else Nothing
+    
+    -- examples
+    ghci$ check (== 'a') item "abcde"
+    Just ("bcde", 'a')
+    
+    ghci$ check (== 'b') item "abcde"
+    Nothing
+\end{verbatim}
+However, in these examples our computational effects are limited to Maybe -- we're
+unable to do error reporting, logging, and so on.  Coming up with more general 
+parsers and combinators will be the topic of the rest of the article.
+
 
 \section{Monad transformers}
 
+\section{Introducing Woof:  a Simple Lisp}
+
+The following examples will all use Woof, a simple dialect of Lisp,
+progressively adding features to a simplistic initial implementation
+to create a usable parser.
+
+The language definition in pseudo-BNF is:
+
+\begin{verbatim}
+Woof         :=   Form(+)
+
+Form         :=   Special  |  Application  |  Symbol  |  
+                  String   |  Number
+
+Special      :=  '{'  ( Define  |  Lambda )  '}'
+
+Define       :=  'define'  String(?)  Symbol  Form
+
+Lambda       :=  'lambda'  '{'  Symbol(*)  '}'  Form(+)
+
+Application  :=  '('  Form(+)  ')'
+
+Number       :=  \d(+)
+
+Symbol       :=  ( \w  |  Schar)  ( \w  |  \d  |  Schar)(*)
+
+Schar        :=  (oneof "<>!@#$%^&*_-+=|:?")
+
+String       :=  '"'  ( Escape  |  (not  ( '"'  |  '\')))(*)  '"'
+
+Escape       :=  '\'  ( '"'  |  '\' )
+
+Whitespace   :=  \s+
+
+Comment      :=  ';'  (not '\n')(*)
+\end{verbatim}
+With the additional rule that whitespace and comments 
+may appear in any amount before any token.
+Tokens are:  {, }, (, ), Symbol, String, and Number.
+
+
+
 \section{Example 1: recognizing}
+
+\subsection{An Elementary Parser}
+The basic types of parsers will be something like
+\begin{verbatim}[t] -> m ([t], a)\end{verbatim}, or, a function that consumes
+part of a list of tokens of type t with computational effects m and
+result a.
+A very basic and fundamental parser is the one that succeeds whenever
+the list of tokens is not empty, consuming one token and presenting it
+as the result, and fails when the list is empty.  We'll call this item,
+and we can easily implement it in terms of the MonadState type class:
+\begin{verbatim}
+item :: (MonadState [t] m, Plus m) => m t
+item =
+    get >>= \xs -> case xs of
+                        (t:ts) -> put ts *> pure t;
+                        []     -> zero;
+\end{verbatim}
+
+\subsection{Token Parsers}
+Let's start with parsers for recognizing our most basic syntactic elements:  tokens.
+These include the seven listed above, as well as whitespace and comments.
+
 
 \section{Example 2: error-reporting}
 
 \section{Example 3: whitespace/comment-logging}
 
 
-
-\section{Verbatim and code}
-
-Um wow this is code:
-\begin{spec}
-class Foo f where
-  foo :: f a -> f b -> f (a,b)
-  -- use for wibbling
-
-bar :: Int -> Bool
-bar  23  =  False
-bar  x   =  not (x `elem` [1,2,3])
-
-\end{spec}
-that was some pretty code.
 
 
 \section{Transformer instance semantics}
