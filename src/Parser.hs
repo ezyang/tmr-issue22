@@ -4,6 +4,7 @@ module Parser (
     item
   , check
   , satisfy
+  , literal
   , Switch(..)
   , not1
   , optionalM
@@ -31,6 +32,9 @@ check f p =
 
 satisfy :: (MonadState [t] m, Plus m) => (t -> Bool) -> m t
 satisfy = flip check item
+
+literal :: (Eq t, MonadState [t] m, Plus m) => t -> m t
+literal c = satisfy ((==) c)
 
 not1 :: (MonadState [t] m, Plus m, Switch m) => m a -> m t
 not1 p = switch p *> item

@@ -35,7 +35,7 @@ instance (Monad m, Plus m) => Plus (StateT s m) where
 instance Switch Maybe where
   switch (Just _) = Nothing
   switch Nothing  = Just ()
-  
+
 instance (Functor m, Switch m) => Switch (StateT s m) where
   switch (StateT f) = StateT (\s -> fmap (const ((), s)) . switch $ f s)
 

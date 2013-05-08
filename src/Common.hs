@@ -6,6 +6,7 @@ module Common (
   , line
   , col
   , countLineCol
+  , simpleExample
   , example
   
 ) where
@@ -16,7 +17,7 @@ data AST
     | ASymbol String
     | AString String
     | ALambda [String] [AST]
-    | ADefine (Maybe String) String AST
+    | ADefine String AST
     | AApp    AST  [AST]
   deriving (Show, Eq)
 
@@ -33,6 +34,18 @@ countLineCol = reverse . snd . foldl f ((1, 1), [])
     f ((line, col), ts)  c   = ((line, col + 1), (c, line, col):ts)
 
 
+simpleExample = "{define \n\
+\  f \n\
+\  {lambda {x y}\n\
+\    (plus x y)}}\n\
+\\n\
+\(a b (c d e))\n\
+\\n\
+\; here's a nice comment !!\n\
+\\n\
+\"
+
+
 example = "{define \n\
 \  f \n\
 \  {lambda {x y}\n\
@@ -40,11 +53,10 @@ example = "{define \n\
 \\n\
 \(* 3 (/ 4 1))\n\
 \\n\
-\; what?? no !!!\n\
+\; here's a nice comment !!\n\
 \\n\
 \{define\n\
-\  \"very important number\"\n\
 \  n\n\
-\  ; seriously, it's really important\n\
+\  ; a very important number\n\
 \  22}\n\
 \"

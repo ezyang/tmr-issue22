@@ -10,30 +10,26 @@ import Common
 import Instances
 
 
-character :: (MonadState [Char] m, Plus m) => Char -> m Char
-character c = satisfy ((==) c)
+ocurly = literal '{'
+ccurly = literal '}'
+oparen = literal '('
+cparen = literal ')'
 
-ocurly = character '{'
-ccurly = character '}'
-oparen = character '('
-cparen = character ')'
+whitespace :: (MonadState [Char] m, Plus m, Switch m) => m [Char]
+whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
+
+comment :: (MonadState [Char] m, Plus m, Switch m) => m [Char]
+comment = literal ';' *> many0 (not1 $ literal '\n')
+
+munch :: (MonadState [Char] m, Plus m, Switch m) => m a -> m a
+munch p = many0 (whitespace <+> comment) *> p
+
 
 digit = satisfy (flip elem ['0' .. '9'])
 
 number = munch $ many1 digit
 
 symbolOpens = ['a' .. 'z'] ++ ['A' .. 'Z'] ++ "!@#$%^&*_-+=:?<>/"
-
-
-whitespace :: (MonadState [Char] m, Plus m, Switch m) => m [Char]
-whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
-
-comment :: (MonadState [Char] m, Plus m, Switch m) => m [Char]
-comment = character ';' *> many0 (not1 $ character '\n')
-
-munch :: (MonadState [Char] m, Plus m, Switch m) => m a -> m a
-munch p = many0 (whitespace <+> comment) *> p
-
 
 symbol = munch (fmap (:) first <*> rest)
   where
@@ -43,11 +39,11 @@ symbol = munch (fmap (:) first <*> rest)
 string :: (MonadState [Char] m, Plus m, Switch m) => m String
 string = munch (dq *> many0 char <* dq)
   where
-    dq = character '"'
+    dq = literal '"'
     char = escape <+> normal
-    escape = character '\\' *> slash_or_dq
+    escape = literal '\\' *> slash_or_dq
     normal = not1 slash_or_dq
-    slash_or_dq = character '\\' <+> character '"'
+    slash_or_dq = literal '\\' <+> literal '"'
 
 
 top = munch oparen
@@ -87,7 +83,6 @@ define :: (MonadState [Char] m, Plus m, Switch m) => m AST
 define =
     check (== "define") symbol   *>
     pure ADefine                <*>
-    optionalM string            <*>
     symbol                      <*>
     form
     

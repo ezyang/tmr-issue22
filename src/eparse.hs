@@ -103,7 +103,6 @@ lambda =
 define open =
     check (== "define") symbol    *>
     pure ADefine                 <*>
-    optionalM string             <*>
     sym                          <*>
     for
   where
@@ -129,7 +128,7 @@ parser = many0 form <* endCheck
                             (t:_) -> throwError ("unparsed input", t)
                             []    -> pure ()
 
-runParse :: Parse e t a -> [t] -> Either' e (Maybe (a, [t]))
-runParse p xs = runMaybeT (runStateT p xs)
+runParser :: Parse e t a -> [t] -> Either' e (Maybe (a, [t]))
+runParser p xs = runMaybeT (runStateT p xs)
 
 type Parse e t a = StateT [t] (MaybeT (Either' e)) a

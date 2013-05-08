@@ -122,7 +122,6 @@ lambda =
 define open =
     check (== "define") symbol    *>
     pure ADefine                 <*>
-    optionalM string             <*>
     sym                          <*>
     for
   where
