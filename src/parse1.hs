@@ -1,7 +1,7 @@
 {-# LANGUAGE   NoMonomorphismRestriction
              , FlexibleContexts           #-}
 
-import Control.Monad.State       (MonadState (..), StateT(..), State)
+import Control.Monad.State       (MonadState (..), StateT(..))
 import Control.Applicative       (Applicative(..))
 import Data.List                 (nub)
 import Parser

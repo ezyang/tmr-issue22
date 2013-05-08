@@ -1,12 +1,11 @@
 {-# LANGUAGE   NoMonomorphismRestriction
              , FlexibleContexts           #-}
 
-import Control.Monad.State       (MonadState (..), StateT(..), State)
-import Control.Monad.Error       (MonadError (..), ErrorT(..))
+import Control.Monad.State       (MonadState (..), StateT(..))
+import Control.Monad.Error       (MonadError (..))
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Applicative       (Applicative(..))
 import Data.List                 (nub)
-import Data.Functor.Identity     (Identity(..))
 import Parser
 import Classes
 import Instances
@@ -19,114 +18,72 @@ type Error = (String, Token)
 character :: (MonadState [Token] m, Plus m) => Char -> m Token
 character c = satisfy ((==) c . chr)
 
-ocurly = character '{'
-
-ccurly = character '}'
-
-oparen = character '('
-
-cparen = character ')'
-
-digit = fmap chr $ satisfy (flip elem ['0' .. '9'] . chr)
-
-number = munch $ many1 digit
-
-symbolOpens = ['a' .. 'z'] ++ ['A' .. 'Z'] ++ "!@#$%^&*_-+=:?<>/"
-
-symbol = munch (fmap (:) first <*> rest)
-  where
-    first = fmap chr $ satisfy (flip elem symbolOpens . chr)
-    rest = many0 (first <+> digit)
-    
--- string :: (MonadState [Token] m, Plus m, Switch m) => m String
-string = munch (dq          >>= \open ->
-                many0 char  <* 
-                commit ("unclosed string literal", open) dq)
-  where
-    dq = character '"'
-    char = fmap chr (escape <+> normal)
-    escape = character '\\' *> slash_or_dq
-    normal = not1 slash_or_dq
-    slash_or_dq = character '\\' <+> character '"'
-
-
--- whitespace :: (MonadState [Token] m, Plus m, Switch m) => m [Token]
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f" . chr)
-
--- comment :: (MonadState [Token] m, Plus m, Switch m) => m [Token]
 comment = character ';' *> many0 (not1 $ character '\n')
 
--- munch :: (MonadState [Token] m, Plus m, Switch m) => m a -> m a
 munch p = many0 (whitespace <+> comment) *> p
 
-top = munch oparen
-tcp = munch cparen
-toc = munch ocurly
-tcc = munch ccurly
+ocurly = munch $ character '{'
+ccurly = munch $ character '}'
+oparen = munch $ character '('
+cparen = munch $ character ')'
+symbol = munch $ many1 char
+  where char = fmap chr $ satisfy (\t -> elem (chr t) (['a' .. 'z'] ++ ['A' .. 'Z']))
 
--- tsymbol :: (MonadState [Token] m, Plus m, Switch m) => m AST
-tsymbol = fmap ASymbol symbol
+eaOp   =  "application: missing operator"
+eaCls  =  "application: missing close parenthesis"
+edSym  =  "define: missing symbol"
+edForm =  "define: missing form"
+edCls  =  "define: missing close curly"
+elPL   =  "lambda: missing parameter list"
+elPrms =  "lambda: duplicate parameter names"
+elPCls =  "lambda: missing parameter list close curly"
+elBody =  "lambda: missing body form"
+elCls  =  "lambda: missing close curly"
+ewUnp  =  "woof: unparsed input"
+esName =  "special form: unable to parse"
 
--- tstring :: (MonadState [Token] m, Plus m, Switch m) => m AST
-tstring = fmap AString string
-
--- tnumber :: (MonadState [Token] m, Plus m, Switch m) => m AST
-tnumber = fmap (ANumber . read) number
-
--- application :: (MonadState [Token] m, Plus m, Switch m) => m AST
 application =
-    top            >>= \open ->
-    operator open  >>= \op ->
-    many0 form     >>= \args ->
-    close open     >>
+    oparen                       >>= \open ->
+    commit (eaOp, open) form     >>= \op ->
+    many0 form                   >>= \args ->
+    commit (eaCls, open) cparen  >>
     return (AApp op args)
-  where
-    operator open = commit ("missing application operator", open) form
-    close open = commit ("missing application close", open) tcp
     
-lambda =
-    check (== "lambda") symbol  >>
-    toc                         >>= \open ->
-    pars open                   >>= \params ->
-    close open                  >>
-    body open                   >>= \bodies ->
-    return (ALambda params bodies)
-  where
-    pars open = 
-        many0 symbol >>= \them -> 
-        if distinct them then return them
-                         else throwError ("duplicate parameter names", open)
-    distinct names = length names == length (nub names)
-    close open = commit ("missing parameter list close", open) tcc
-    body open = commit ("missing 1 or more lambda bodies", open) (many1 form)
-
-define open =
+define =
+    ocurly                       >>= \open ->
     check (== "define") symbol    *>
     pure ADefine                 <*>
-    sym                          <*>
-    for
-  where
-    sym = commit ("define: missing symbol", open) symbol
-    for = commit ("define: missing form", open) form
+    commit (edSym, open) symbol  <*>
+    commit (edForm, open) form   <*
+    commit (edCls, open) ccurly  
     
-special = 
-    toc          >>= \open ->
-    spec open    >>= \val ->
-    close open   >>
-    return val
+lambda =
+    ocurly                               >>= \open ->
+    check (== "lambda") symbol           >>
+    commit (elPL, open) ocurly           >>= \p_open ->
+    many0 symbol                         >>= \params ->
+    (if distinct params 
+        then return ()
+        else throwError (elPrms, open))  >>
+    commit (elPCls, open) ccurly         >>
+    commit (elBody, open) (many1 form)   >>= \bodies ->
+    commit (elCls, open) ccurly          >>
+    return (ALambda params bodies)
   where
-    spec open = commit ("unable to parse special form", open) (lambda <+> define open)
-    close open = commit ("missing special form close", open) tcc
-    
-form = foldr (<+>) zero [tsymbol, tnumber, tstring, application, special]
+    distinct names = length names == length (nub names)
 
-parser = many0 form <* endCheck
-  where
-    endCheck = 
-        many0 (whitespace <+> comment) *>
-        get >>= \xs -> case xs of
-                            (t:_) -> throwError ("unparsed input", t)
-                            []    -> pure ()
+special = define <+> lambda <+> (ocurly >>= \o -> throwError (esName, o))
+
+form = fmap ASymbol symbol <+> application <+> special
+
+endCheck = 
+    many0 (whitespace <+> comment) *>
+    get >>= \xs -> case xs of
+                        (t:_) -> throwError (ewUnp, t)
+                        []    -> pure ()
+
+woof = many0 form <* endCheck
 
 runParser :: Parse e t a -> [t] -> Either' e (Maybe (a, [t]))
 runParser p xs = runMaybeT (runStateT p xs)

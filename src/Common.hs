@@ -6,7 +6,6 @@ module Common (
   , line
   , col
   , countLineCol
-  , simpleExample
   , example
   
 ) where
@@ -34,7 +33,7 @@ countLineCol = reverse . snd . foldl f ((1, 1), [])
     f ((line, col), ts)  c   = ((line, col + 1), (c, line, col):ts)
 
 
-simpleExample = "{define \n\
+example = "{define \n\
 \  f \n\
 \  {lambda {x y}\n\
 \    (plus x y)}}\n\
@@ -43,20 +42,4 @@ simpleExample = "{define \n\
 \\n\
 \; here's a nice comment !!\n\
 \\n\
-\"
-
-
-example = "{define \n\
-\  f \n\
-\  {lambda {x y}\n\
-\    (+ x y)}}\n\
-\\n\
-\(* 3 (/ 4 1))\n\
-\\n\
-\; here's a nice comment !!\n\
-\\n\
-\{define\n\
-\  n\n\
-\  ; a very important number\n\
-\  22}\n\
 \"
