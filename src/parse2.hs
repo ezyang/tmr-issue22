@@ -19,7 +19,7 @@ character :: (MonadState [Token] m, Plus m) => Char -> m Token
 character c = satisfy ((==) c . chr)
 
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f" . chr)
-comment = character ';' *> many0 (not1 $ character '\n')
+comment = pure (:) <*> character ';' <*> many0 (not1 $ character '\n')
 
 munch p = many0 (whitespace <+> comment) *> p
 
@@ -28,7 +28,7 @@ ccurly = munch $ character '}'
 oparen = munch $ character '('
 cparen = munch $ character ')'
 symbol = munch $ many1 char
-  where char = fmap chr $ satisfy (\t -> elem (chr t) (['a' .. 'z'] ++ ['A' .. 'Z']))
+  where char = fmap chr $ satisfy (flip elem (['a' .. 'z'] ++ ['A' .. 'Z']) . chr)
 
 eaOp   =  "application: missing operator"
 eaCls  =  "application: missing close parenthesis"
@@ -40,8 +40,9 @@ elPrms =  "lambda: duplicate parameter names"
 elPCls =  "lambda: missing parameter list close curly"
 elBody =  "lambda: missing body form"
 elCls  =  "lambda: missing close curly"
-ewUnp  =  "woof: unparsed input"
 esName =  "special form: unable to parse"
+ewUnp  =  "woof: unparsed input"
+-- other possibilities:  non-symbol in parameter list
 
 application =
     oparen                       >>= \open ->
@@ -85,7 +86,8 @@ endCheck =
 
 woof = many0 form <* endCheck
 
-runParser :: Parse e t a -> [t] -> Either' e (Maybe (a, [t]))
-runParser p xs = runMaybeT (runStateT p xs)
 
 type Parse e t a = StateT [t] (MaybeT (Either' e)) a
+
+runParser :: Parse e t a -> [t] -> Either' e (Maybe (a, [t]))
+runParser p xs = runMaybeT (runStateT p xs)
