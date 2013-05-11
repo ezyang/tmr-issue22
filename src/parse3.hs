@@ -1,19 +1,20 @@
 {-# LANGUAGE   NoMonomorphismRestriction
              , FlexibleContexts       
              , FlexibleInstances    
-             , MultiParamTypeClasses  #-}
+             , FunctionalDependencies
+             , UndecidableInstances      #-}
 
 
 import Control.Monad             (liftM, ap)
 import Control.Monad.State       (MonadState (..), StateT(..))
-import Control.Monad.Error       (MonadError (..))
-import Control.Monad.Trans.Class (MonadTrans (..))
+import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Applicative       (Applicative(..))
 import Data.List                 (nub)
 
 -- should also try:
 --   partial results
+
 
 -- the prelude
 
@@ -27,31 +28,25 @@ many0 p = many1 p <+> pure []
 many1 :: Plus f => f a -> f [a]
 many1 p = pure (:) <*> p <*> many0 p
 
-class Switch f where
-  switch :: f a -> f ()
-
-data Either' a b
-    = Left' a
-    | Right' b
-  deriving (Show, Eq)
-
-  
 instance Plus Maybe where
-  zero = Nothing
-  Nothing <+> y = y
-  x       <+> _ = x
+  zero             =  Nothing
+  Nothing  <+>  y  =  y
+  x        <+>  _  =  x
 
 instance (Functor m, Monad m) => Plus (MaybeT m) where
-  zero = MaybeT (return Nothing)
+  zero                     =  MaybeT (return Nothing)
   MaybeT l  <+>  MaybeT r  =  MaybeT x
     where
       x = l >>= \y -> case y of Nothing -> r;
                                 Just _  -> return y;
 
 instance (Monad m, Plus m) => Plus (StateT s m) where
-  zero = StateT (const zero)
-  StateT f <+> StateT g = StateT (\s -> f s <+> g s)
+  zero                   =  StateT (const zero)
+  StateT f <+> StateT g  =  StateT (\s -> f s <+> g s)
 
+
+class Switch f where
+  switch :: f a -> f ()
 
 instance Switch Maybe where
   switch (Just _) = Nothing
@@ -64,22 +59,22 @@ instance Functor m => Switch (MaybeT m) where
   switch (MaybeT m) = MaybeT (fmap switch m)
 
 
-instance Functor (Either' e) where
-  fmap = liftM
+class Monad m => MonadError e m | m -> e where
+  throwError :: e -> m a
+  catchError :: m a -> (e -> m a) -> m a
 
-instance Applicative (Either' e) where
-  pure = return
-  (<*>) = ap
+instance MonadError e (Either e) where
+  throwError               =  Left
+  catchError  (Right x) _  =  Right x
+  catchError  (Left e)  f  =  f e
+  
+instance MonadError e m => MonadError e (StateT s m) where
+  throwError      =  lift . throwError
+  catchError m f  =  StateT (\s -> catchError (runStateT m s) (\e -> runStateT (f e) s))
 
-instance Monad (Either' e) where
-  return            =  Right'
-  Left' e   >>=  _  =  Left' e
-  Right' x  >>=  f  =  f x
-
-instance MonadError e (Either' e) where
-  throwError                =  Left'
-  catchError  (Right' x) _  =  Right' x
-  catchError  (Left' e)  f  =  f e
+instance MonadError e m => MonadError e (MaybeT m) where
+  throwError      =  lift . throwError
+  catchError m f  =  MaybeT $ catchError (runMaybeT m) (runMaybeT . f)
 
 
 data AST
@@ -138,12 +133,14 @@ end = switch item
 commit :: (MonadError e m, Plus m) => e -> m a -> m a
 commit err p = p <+> throwError err
 
+-- the actual parser
+
 
 logJunk text line col =
     lift get              >>= \junks ->
     lift $ put ((text, line, col):junks)
 
--- the actual parser
+type Error = (String, Token)
 
 
 character :: (MonadState [Token] m, Plus m) => Char -> m Token
@@ -228,7 +225,7 @@ endCheck =
 woof = many0 form <* endCheck
 
 
-type Parse s e t a = StateT [t] (StateT s (MaybeT (Either' e))) a
+type Parse s e t a = StateT [t] (StateT s (MaybeT (Either e))) a
 
-runParser :: Parse s e t a -> [t] -> s -> Either' e (Maybe ((a, [t]), s))
+runParser :: Parse s e t a -> [t] -> s -> Either e (Maybe ((a, [t]), s))
 runParser p xs s = runMaybeT (runStateT (runStateT p xs) s)
