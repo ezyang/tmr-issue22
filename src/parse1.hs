@@ -2,31 +2,11 @@
              , FlexibleContexts           #-}
 
 import Control.Monad.State       (MonadState (..), StateT(..))
-import Control.Applicative       (Applicative(..))
+import Control.Applicative       (Applicative(..), Alternative(..))
 import Data.List                 (nub)
 
 
 -- the prelude:  type classes, data types, instances, and general combinators
-
-class Applicative f => Plus f where
-  zero :: f a
-  (<+>) :: f a -> f a -> f a
-
-many0 :: Plus f => f a -> f [a]
-many0 p = many1 p <+> pure []
-
-many1 :: Plus f => f a -> f [a]
-many1 p = pure (:) <*> p <*> many0 p
-
-instance Plus Maybe where
-  zero = Nothing
-  Nothing <+> y = y
-  x       <+> _ = x
-
-instance (Monad m, Plus m) => Plus (StateT s m) where
-  zero = StateT (const zero)
-  StateT f <+> StateT g = StateT (\s -> f s <+> g s)
-
 
 class Switch f where
   switch :: f a -> f ()
@@ -47,27 +27,30 @@ data AST
     | AApp    AST  [AST]
   deriving (Show, Eq)
 
-item :: (MonadState [t] m, Plus m) => m t
+many0 = many
+many1 = some
+
+item :: (MonadState [t] m, Alternative m) => m t
 item =
     get >>= \xs -> case xs of
                         (t:ts) -> put ts *> pure t;
-                        []     -> zero;
+                        []     -> empty;
 
-check :: (Monad m, Plus m) => (a -> Bool) -> m a -> m a
+check :: (Monad m, Alternative m) => (a -> Bool) -> m a -> m a
 check f p =
     p >>= \x ->
-    if (f x) then return x else zero
+    if (f x) then return x else empty
 
-satisfy :: (MonadState [t] m, Plus m) => (t -> Bool) -> m t
+satisfy :: (MonadState [t] m, Alternative m) => (t -> Bool) -> m t
 satisfy = flip check item
 
-literal :: (Eq t, MonadState [t] m, Plus m) => t -> m t
+literal :: (Eq t, MonadState [t] m, Alternative m) => t -> m t
 literal c = satisfy ((==) c)
 
-not1 :: (MonadState [t] m, Plus m, Switch m) => m a -> m t
+not1 :: (MonadState [t] m, Alternative m, Switch m) => m a -> m t
 not1 p = switch p *> item
 
-end :: (MonadState [t] m, Plus m, Switch m) => m ()
+end :: (MonadState [t] m, Alternative m, Switch m) => m ()
 end = switch item
 
 example = "{define \n\
@@ -86,7 +69,7 @@ example = "{define \n\
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
 comment = pure (:) <*> literal ';' <*> many0 (not1 $ literal '\n')
 
-munch p = many0 (whitespace <+> comment) *> p
+munch p = many0 (whitespace <|> comment) *> p
 
 ocurly = munch $ literal '{'
 ccurly = munch $ literal '}'
@@ -122,14 +105,14 @@ lambda =
   where
     distinct names = length names == length (nub names)
 
-special = define <+> lambda
+special = define <|> lambda
 
-form = fmap ASymbol symbol <+> application <+> special
+form = fmap ASymbol symbol <|> application <|> special
 
 woof = many1 form <* munch end
 
 
-type Parser a = StateT [Char] Maybe a 
+type Parser t a = StateT [t] Maybe a 
 
-runParser :: Parser a -> String -> Maybe (a, String)
+runParser :: Parser Char a -> String -> Maybe (a, String)
 runParser = runStateT
