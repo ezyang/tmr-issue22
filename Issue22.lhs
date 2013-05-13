@@ -11,9 +11,9 @@
 \usepackage{ifthen}
 \usepackage[all]{xy}
 
-\issue{Issue N}
+\issue{Issue 22}
 
-%\author{First Last\email{foo@example.com}}
+\author{Anton Dergunov\email{anton.dergunov@@gmail.com}}
 
 \publishers{Edward Z. Yang, editor.}
 
@@ -23,6 +23,6 @@
 \tableofcontents
 
 \article{Editorial}
-%\article{articlename}
+\article{gadt}
 
 \end{document}

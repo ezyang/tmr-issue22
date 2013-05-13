@@ -1,7 +1,7 @@
-issue = Issue
+issue = Issue22
 
 #lhssources = 
-texsources = Editorial.tex
+texsources = Editorial.tex gadt.tex
 
 default: $(issue).pdf
 
@@ -20,9 +20,7 @@ clean:
 
 # put .bib files here
 bib :
-	bibtex tuples
-	bibtex mrmonad
-	bibtex haskell_errors
+	bibtex gadt
 
 final : $(issue).pdf bib
 	pdflatex $(issue).tex
