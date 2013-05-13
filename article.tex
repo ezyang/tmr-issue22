@@ -5,34 +5,25 @@
 
 %include polycode.fmt
 
-\title{Combinator Parsers:  a Monad Transformer Approach}
+\title{Error Reporting Parsers:  a Monad Transformer Approach}
 \author{Matt Fenwick\email{mfenwick100@gmail.com}}
 
 \begin{document}
 
 
 \begin{introduction}
-Parsing, or "the process of analysing a 
-string of symbols according to the rules of a formal grammar" (Wikipedia),
-is one of the most fundamental and interesting problems in programming.
-The general goal of parsing is to build a tree representing the structure
-of the parsed input; further operations such as interpretation or
-code generations are then performed on the tree.
-
-However, in addition to recognizing a stream of tokens and building a parse
+Parsing has long been one of the most fascinating and challenging applications
+of programming, as evidenced by the large number of parsing libraries available
+today.  However, in addition to recognizing a stream of tokens and building a parse
 tree, a practical parser has many additional duties.  If parsing fails,
 the location and cause of the failure must be accurately reported so that
-the user can address the problem; specially formatted comments may be need
-to be capture in order to be used
-to build hyperlinked code documentation, instead of simply thrown away; 
-failed parses may be accompanied by partial results to save the cost
-of reparsing the input before the error.
-
-Monad transformers offer an elegant solution, both to the problem of 
-implementing parser combinators themselves, as well as to the issue of
-building clean and modular parsers that support multiple effects.
-We'll explore what they have to offer using a simple language -- Woof --
-and build a number of separate parsers for it!
+the user can address the problem
+Thus, building composable parsers which accurately report any errors
+is extremely difficult.  In this article, we'll see how building
+a parsing library around monad transformers allows to build clean and simple 
+parsers which nevertheless provide relevant and location-specific error messages.
+At the same time, we'll explore the design and some of the tradeoffs of the 
+popular Haskell library for monad transformers.
 \end{introduction}
 
 
@@ -134,6 +125,13 @@ amount before any token.  Tokens are:  {, }, (, ), and Symbol.
 
 
 \section{Example 1: Recognition and Tree-Building}
+
+Parsing is "the process of analysing a 
+string of symbols according to the rules of a formal grammar" (Wikipedia)
+The general goal of parsing is to build a tree representing the structure
+of the parsed input; further operations such as interpretation or
+code generations are then performed on the tree.
+
 The first parser we build will be responsible for determining whether input
 text conforms to the language definition and simultaneously build an 
 Abstract Syntax Tree representing of the structure of the recognized input.
@@ -633,33 +631,23 @@ ghci$ map (runParser woof . countLineCol) ["()", "(a b", "{define (a b c)}",
                                      "{lambda (a b c)}", "{lambda {a b a} (c d)}", 
                                      "{lambda {a b (c d)}", "{lambda {a b}}", 
                                      "{lambda {a b} (c d)", "{defin x y}", "a,b"]
-Left' ("application: missing operator",('(',1,1))
-Left' ("application: missing close parenthesis",('(',1,1))
-Left' ("define: missing symbol",('{',1,1))
-Left' ("define: missing form",('{',1,1))
-Left' ("define: missing close curly",('{',1,1))
-Left' ("lambda: missing parameter list",('{',1,1))
-Left' ("lambda: duplicate parameter names",('{',1,1))
-Left' ("lambda: missing parameter list close curly",('{',1,1))
-Left' ("lambda: missing body form",('{',1,1))
-Left' ("lambda: missing close curly",('{',1,1))
-Left' ("special form: unable to parse",('{',1,1))
-Left' ("woof: unparsed input",(',',1,2))
+Left ("application: missing operator",('(',1,1))
+Left ("application: missing close parenthesis",('(',1,1))
+Left ("define: missing symbol",('{',1,1))
+Left ("define: missing form",('{',1,1))
+Left ("define: missing close curly",('{',1,1))
+Left ("lambda: missing parameter list",('{',1,1))
+Left ("lambda: duplicate parameter names",('{',1,1))
+Left ("lambda: missing parameter list close curly",('{',1,1))
+Left ("lambda: missing body form",('{',1,1))
+Left ("lambda: missing close curly",('{',1,1))
+Left ("special form: unable to parse",('{',1,1))
+Left ("woof: unparsed input",(',',1,2))
 \end{verbatim}
 
 
 
-\section{Example 3: whitespace/comment-logging}
-
-
-
-
-\section{Transformer instance semantics}
-
-Pass-through vs. deal-with, examples of each
-
-
-\section{Limitations of the Monad Transformer Approach}
+\section{Monad Transformer Stacks}
 
 1. Exact vs. relative layer order; 
 2. one instance per stack, even when more than one is applicable --
@@ -671,9 +659,13 @@ some new instances for it -- to be able to use the right instances
 
 
 
-\section{Conclusion}
+\section{Transformer instance semantics}
 
-Parser combinators and monad transformers FTW!
+Pass-through vs. deal-with, examples of each
+
+
+\section{Conclusion}
+Furthur applications of monad transformers to parsing:  junk logging, partial results, ???
 
 
 \bibliography{Author}
