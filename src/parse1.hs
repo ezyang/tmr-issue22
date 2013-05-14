@@ -8,27 +8,15 @@ import Data.List                 (nub)
 
 -- the prelude:  type classes, data types, instances, and general combinators
 
-class Switch f where
-  switch :: f a -> f ()
+type Parser t a = StateT [t] Maybe a 
 
-instance Switch Maybe where
-  switch (Just _) = Nothing
-  switch Nothing  = Just ()
+runParser :: Parser t a -> [t] -> Maybe (a, [t])
+runParser = runStateT
 
-instance (Functor m, Switch m) => Switch (StateT s m) where
-  switch (StateT f) = StateT (\s -> fmap (const ((), s)) . switch $ f s)
-
-data AST
-    = ANumber Integer
-    | ASymbol String
-    | AString String
-    | ALambda [String] [AST]
-    | ADefine String AST
-    | AApp    AST  [AST]
-  deriving (Show, Eq)
 
 many0 = many
 many1 = some
+
 
 item :: (MonadState [t] m, Alternative m) => m t
 item =
@@ -47,11 +35,33 @@ satisfy = flip check item
 literal :: (Eq t, MonadState [t] m, Alternative m) => t -> m t
 literal c = satisfy ((==) c)
 
+
+class Switch f where
+  switch :: f a -> f ()
+
+instance Switch Maybe where
+  switch (Just _) = Nothing
+  switch Nothing  = Just ()
+
+instance (Functor m, Switch m) => Switch (StateT s m) where
+  switch (StateT f) = StateT (\s -> fmap (const ((), s)) . switch $ f s)
+
 not1 :: (MonadState [t] m, Alternative m, Switch m) => m a -> m t
 not1 p = switch p *> item
 
 end :: (MonadState [t] m, Alternative m, Switch m) => m ()
 end = switch item
+
+
+data AST
+    = ANumber Integer
+    | ASymbol String
+    | AString String
+    | ALambda [String] [AST]
+    | ADefine String AST
+    | AApp    AST  [AST]
+  deriving (Show, Eq)
+
 
 example = "{define \n\
 \  f \n\
@@ -71,36 +81,36 @@ comment = pure (:) <*> literal ';' <*> many0 (not1 $ literal '\n')
 
 munch p = many0 (whitespace <|> comment) *> p
 
-ocurly = munch $ literal '{'
-ccurly = munch $ literal '}'
-oparen = munch $ literal '('
-cparen = munch $ literal ')'
+opencurly  = munch $ literal '{'
+closecurly = munch $ literal '}'
+openparen  = munch $ literal '('
+closeparen = munch $ literal ')'
 symbol = munch $ many1 char
   where char = satisfy (flip elem (['a' .. 'z'] ++ ['A' .. 'Z']))
 
 application =
-    oparen      >>
+    openparen   >>
     form        >>= \op ->
     many0 form  >>= \args ->
-    cparen      >>
+    closeparen  >>
     return (AApp op args)
 
 define =
-    ocurly                       *>
+    opencurly                    *>
     check (== "define") symbol   *>
     pure ADefine                <*>
     symbol                      <*>
     form                        <*
-    ccurly
+    closecurly
     
 lambda =
-    ocurly                          >>
+    opencurly                       >>
     check (== "lambda") symbol      >>
-    ocurly                          >>
+    opencurly                       >>
     check distinct (many0 symbol)   >>= \params ->
-    ccurly                          >>
+    closecurly                      >>
     many1 form                      >>= \bodies ->
-    ccurly                          >>
+    closecurly                      >>
     return (ALambda params bodies)
   where
     distinct names = length names == length (nub names)
@@ -111,8 +121,7 @@ form = fmap ASymbol symbol <|> application <|> special
 
 woof = many1 form <* munch end
 
-
-type Parser t a = StateT [t] Maybe a 
-
-runParser :: Parser Char a -> String -> Maybe (a, String)
-runParser = runStateT
+test = runParser woof example == r
+  where r = Just ([ADefine "f" (ALambda ["x","y"] [AApp (ASymbol "plus") [ASymbol "x",ASymbol "y"]]),
+                   AApp (ASymbol "a") [ASymbol "b",AApp (ASymbol "c") [ASymbol "d",ASymbol "e"]]],
+                  "")
