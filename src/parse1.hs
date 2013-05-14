@@ -89,11 +89,11 @@ symbol = munch $ many1 char
   where char = satisfy (flip elem (['a' .. 'z'] ++ ['A' .. 'Z']))
 
 application =
-    openparen   >>
-    form        >>= \op ->
-    many0 form  >>= \args ->
-    closeparen  >>
-    return (AApp op args)
+    openparen    *>
+    pure AApp   <*>
+    form        <*>
+    many0 form  <*
+    closeparen
 
 define =
     opencurly                    *>
@@ -102,16 +102,16 @@ define =
     symbol                      <*>
     form                        <*
     closecurly
-    
-lambda =
-    opencurly                       >>
-    check (== "lambda") symbol      >>
-    opencurly                       >>
-    check distinct (many0 symbol)   >>= \params ->
-    closecurly                      >>
-    many1 form                      >>= \bodies ->
-    closecurly                      >>
-    return (ALambda params bodies)
+
+lambda = 
+    opencurly                       *>
+    check (== "lambda") symbol      *>
+    opencurly                       *>
+    pure ALambda                   <*>
+    check distinct (many0 symbol)  <*>
+    (closecurly                     *>
+     many1 form                    <*
+     closecurly)
   where
     distinct names = length names == length (nub names)
 
