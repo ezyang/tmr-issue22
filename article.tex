@@ -29,6 +29,8 @@ build a simple parser, and then we'll add in error reporting.
 \end{introduction}
 
 
+
+
 \section{Parser Combinators}
 Parser combinators are an excellent approach for building parsers that are easy
 to maintain and expressive.  In addition, they benefit from host-language
@@ -141,6 +143,43 @@ all while taking advantage of monad transformers to keep it modular.
 
 
 
+
+\section{Monad transformers}
+Monad transformers allow monads to be modularly combined to form new monads
+which combine the semantics of their constituents.  That's exactly what we need
+to do to build parsers.
+We'll try to use the standard transformers/mtl libraries as much as possible, 
+since they're easy to obtain, easy to use, and quite effective in practice, but
+occasionally we'll have to make an extension to avoid certain type class
+instances.
+
+First, note that the parser type we used earlier -- [t] -> Maybe ([t], a) -- 
+can be built out of the StateT monad transformer applied to Maybe, so the new
+parser type is:
+\begin{verbatim}
+type Parser t a = StateT [t] Maybe a
+\end{verbatim}
+Now we can build the item parser using the combinators from MonadState, since
+its token lists are the 'state' that it modifies.
+\begin{verbatim}
+{-# LANGUAGE   FlexibleContexts  #-}
+
+import Control.Monad.State       (MonadState (..), StateT(..))
+
+item :: (MonadState [t] m, Alternative m) => m t
+item =
+    get >>= \xs -> case xs of
+                        (t:ts) -> put ts *> pure t;
+                        []     -> empty;
+\end{verbatim}
+Note that we needed to use the FlexibleContexts language extension for the 
+MonadState constraints in the type signatures.  This formulation of monad
+transformers relies heavily on extensions to the type system, more of which 
+we'll have to use for some of the later code in this article.
+
+
+
+
 \section{Introducing Woof:  a Simple Lisp}
 The simple language we'll use as a motivation for building parsers is 
 Woof, a simple dialect of Lisp.  We'll be 
@@ -168,45 +207,26 @@ Whitespace   :=  \s+
 
 Comment      :=  ';'  (not '\n')(*)
 \end{verbatim}
+
 With the additional rule that whitespace and comments may appear in any 
-amount before any token.  Tokens are:  {, }, (, ), and Symbol.
+amount before any token.  Tokens are:
+\begin{itemize}
+\item \verb+{+
+\item \verb+}+
+\item \verb+(+
+\item \verb+)+
+\item \verb+Symbol+
+\end{itemize}
 
-
-
-\section{Monad transformers}
-Monad transformers allow monads to be modularly combined to form new monads
-which combine the semantics of their constituents.  That's exactly what we need
-to do to build parsers.
-We'll try to use the standard transformers/mtl libraries as much as possible, 
-since they're easy to obtain, easy to use, and quite effective in practice, but
-occasionally we'll have to make an extension to avoid certain type class
-instances.
-
-First, note that the parser type we used earlier -- [t] -> Maybe ([t], a) -- 
-can be built out of the StateT monad transformer applied to Maybe, so the new
-parser type is:
-\begin{verbatim}
-type Parser t a = StateT [t] Maybe a
-\end{verbatim}
-And now we can build the item parser using the MonadState combinators:
-\begin{verbatim}
-
-\end{verbatim}
-
-
-Along the way, we'll also explore some of the consequences of combining monads,
-both with respect to semantics and to the definition of the Haskell language.  We'll
-also bump in to some of the limitations, trade-offs and design decisions of the 
-transformer/mtl library.
 
 
 
 \section{Example 1: Recognition and Tree-Building}
 
-The first parser we build will be responsible for determining whether input
-text conforms to the language definition and simultaneously build an 
+\subsection{Preliminaries}
+The first Woof parser we build will be responsible for determining whether input
+text conforms to the language definition and simultaneously building an 
 Abstract Syntax Tree representing of the structure of the recognized input.
-
 Here's the AST definition we'll use:
 \begin{verbatim}
 data AST
@@ -218,110 +238,54 @@ data AST
     | AApp    AST  [AST]
   deriving (Show, Eq)
 \end{verbatim}
-Plus we'll need a type for our parsers.  We'll use the basic type mentioned 
-above -- \begin{verbatim}[t] -> m (a, [t]) \end{verbatim}
- -- as our starting point.  This type corresponds to our first monad transformer:  
- StateT (from Control.Monad.State), so we can write:
+
+We'll also want a function for running our parsers, using the type given in the
+prevous section:
 \begin{verbatim}
-type Parser a = StateT [Char] Maybe a
-\end{verbatim}
-and a function for running a parser:
-\begin{verbatim}
-runParser :: Parser a -> String -> Maybe (a, String)
+runParser :: Parser [t] a -> [t] -> Maybe (a, [t])
 runParser = runStateT
 \end{verbatim}
-Which means that our Parser is a State monad transformer, with the Maybe type
-as its underlying Monad parameter.
-
-The significance of the Maybe parameter is two-fold:  it allows computational
-effects to express first success versus failure, using the Just and Nothing 
-constructors, respectively, and second backtracking/alternation.  We'll
-capture both of these characteristics with using a type class, Plus:
-\begin{verbatim}
-class Applicative f => Plus f where
-  zero :: f a
-  (<+>) :: f a -> f a -> f a
-\end{verbatim}
-This type class is identical in intent to the Alternative type class from
-Control.Applicative, with zero corresponding to empty and <+> to \verb+<|>+; 
-however, we aren't able to use Alternative directly because
-other of the monad transformers have unsuitable instances for our purposes,
-and as we'll see later, inability to swap out such instances is one of the 
-limitations of the monad transformer approach.  
-
-To get around this limitation, we'll create instances for the Plus type class:
-\begin{verbatim}
-instance Plus Maybe where
-  zero = Nothing
-  Nothing <+> y = y
-  x       <+> _ = x
-
-instance (Monad m, Plus m) => Plus (StateT s m) where
-  zero = StateT (const zero)
-  StateT f <+> StateT g = StateT (\s -> f s <+> g s)
-\end{verbatim}
-Note that the StateT instance relies on its monad parameter, m, also being a 
-member of the Plus type class.  This works out for our parser, since m is Maybe
-and we do have a Plus instance for Maybe.
 
 \subsection{Token parsers}
 Now let's get down to the business of building parsers, starting with parsers
 for our most basic syntactic elements:  tokens.
 These include the four braces, symbols, strings, numbers, whitespace, and comments.
-To recognize braces, we need to re-implement the item and check combinators that
-we did before.  Using the MonadState and Plus type classes, 
-we can now implement the basic item parser as a stateful
-computation that fails if the state is empty:
+To recognize braces, we need to use the item and check combinators to build a new
+ combinator, satisfy, that checks whether the next character meets a condition:
 \begin{verbatim}
-item :: (MonadState [t] m, Plus m) => m t
-item =
-    get >>= \xs -> case xs of
-                        (t:ts) -> put ts *> pure t;
-                        []     -> zero;
-\end{verbatim}
-And we can easily implement a new version of the check combinator:
-\begin{verbatim}
-check :: (Monad m, Plus m) => (a -> Bool) -> m a -> m a
-check f p =
-    p >>= \x ->
-    if (f x) then return x else zero
-\end{verbatim}
-And use both of them to build a new combinator, satisfy, that checks whether
-the next character meets a condition:
-\begin{verbatim}
-satisfy :: (MonadState [t] m, Plus m) => (t -> Bool) -> m t
+satisfy :: (MonadState [t] m, Alternative m) => (t -> Bool) -> m t
 satisfy = flip check item
 \end{verbatim}
-And finally a parser that checks that the next character is equal to a
-given character:
+
+And a combinator that checks that the next character is equal to a given character:
 \begin{verbatim}
-literal :: (Eq t, MonadState [t] m, Plus m) => t -> m t
+literal :: (Eq t, MonadState [t] m, Alternative m) => t -> m t
 literal c = satisfy ((==) c)
 \end{verbatim}
-Now we're ready to build parsers for the four bracket tokens.  
-An exercise for the reader:  what is the inferred type of each parser?
-Let's first build a parser for open curly brackets:
-\begin{verbatim}
-ocurly = literal '{'
-\end{verbatim}
-And let's try it out in ghci to make sure it does what we expect:
-\begin{verbatim}
-ghci$ runParser ocurly "{abc"
-Just ('{', "abc")
 
-ghci$ map (runParser  ocurly) ["}abc", "(abc", "abc"]
-[Nothing, Nothing, Nothing]
+Now we're ready to build parsers for the four bracket tokens.  
+First, a simple bracket parser:
+\begin{verbatim}
+opencurly = literal '{'
 \end{verbatim}
+
+And some examples to make sure it's behaving correctly:
+\begin{verbatim}
+*Main> map (runParser  opencurly) ["{abc", "}abc", "(abc", "abc"]
+[Just ('{', "abc"), Nothing, Nothing, Nothing]
+\end{verbatim}
+
 Good, it correctly accepts open curly brackets and rejects everything else.
 But what about the spec that said that comments and whitespace can occur 
 before any token -- will our parser be able to handle that?
 \begin{verbatim}
-ghci$ map (runParser  ocurly) ["}abc", "(abc", "abc"]
+*Main> map (runParser  opencurly) ["}abc", "(abc", "abc"]
 Nothing
 \end{verbatim}
+
 Of course not -- we haven't told it how to skip comments and whitespace yet!
 Let's do that now, first by defining the whitespace and comment patterns, then
-by creating a combinator (which we'll call munch) that takes in a parser, 
+by creating a \verb+munch+ combinator that takes in a parser, 
 throws away all leading junk, then runs the parser:
 \begin{verbatim}
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
@@ -329,9 +293,33 @@ comment = pure (:) <*> literal ';' <*> many0 (not1 $ literal '\n')
 
 munch p = many0 (whitespace <+> comment) *> p
 \end{verbatim}
-The comment parser uses a new combinator, not1, which is built out of a new type class,
-Switch, whose intention is to model computations which can be switched from successful
-to failing and vice versa:
+Here are these three parsers in action:
+\begin{verbatim}
+*Main> runParser whitespace "\n \t   \tabc"
+Just ("\n \t   \t","abc")
+
+*Main> runParser whitespace "abc"
+Nothing
+
+*Main> runParser comment ";123  \t\nabc"
+Just (";123  \t","\nabc")
+
+*Main> runParser (munch $ literal 'a') "abc"
+Just ('a',"bc")
+
+*Main> runParser (munch $ literal 'a') ";comment!\n   abc"
+Just ('a',"bc")
+
+*Main> runParser (munch $ literal 'a') ";comment!\n   bca"
+Nothing
+
+*Main> runParser (munch $ literal 'a') "bca"
+Nothing
+\end{verbatim}
+
+The comment parser uses a new combinator, not1, which is built out of a new
+type class, Switch, which models computations which can be switched from
+successful to failing and vice versa:
 \begin{verbatim}
 class Switch f where
   switch :: f a -> f ()
@@ -343,35 +331,45 @@ instance Switch Maybe where
 instance (Functor m, Switch m) => Switch (StateT s m) where
   switch (StateT f) = StateT (\s -> fmap (const ((), s)) . switch $ f s)
 
-
-not1 :: (MonadState [t] m, Plus m, Switch m) => m a -> m t
+not1 :: (MonadState [t] m, Alternative m, Switch m) => m a -> m t
 not1 p = switch p *> item
 \end{verbatim}
-And now let's fix the ocurly parser using munch and try it out:
-\begin{verbatim}
-ocurly = munch $ literal '{'
 
-ghci$ map (runParser ocurly) [";abc\n  {def", "{def", "(def", "}def"]
+With munch in hand, we can now fix opencurly and try it out:
+\begin{verbatim}
+opencurly = munch $ literal '{'
+
+*Main> map (runParser opencurly) [";abc\n  {def", "{def", "(def", "}def"]
 [Just ('{',"def"),Just ('{',"def"),Nothing,Nothing]
 \end{verbatim}
 Excellent!  Now the open curly parser correctly throws away whitespace and comments,
 and succeeds, consuming one character, when the first non-junk character is an open 
 curly brace, and fails otherwise.
-We can now define parsers for the other three brace tokens:
+It's straightforward to define parsers for the other three brace tokens:
 \begin{verbatim}
-ccurly = munch $ literal '}'
-oparen = munch $ literal '('
-cparen = munch $ literal ')'
+closecurly = munch $ literal '}'
+openparen  = munch $ literal '('
+closeparen = munch $ literal ')'
 \end{verbatim}
+
 The parser for our last token, Symbol, is slightly more complicated because it allows
 multiple characters and multiple lengths.  We'll use the satisfy combinator along with 
 a function that checks whether a character is one of the legal symbol characters:
 \begin{verbatim}
 symbol = munch $ many1 char
   where char = satisfy (flip elem (['a' .. 'z'] ++ ['A' .. 'Z']))
+
+*Main> runParser symbol "abc123"
+Just ("abc","123")
+
+*Main> runParser symbol ";sdfasdfsa\n  abc123"
+Just ("abc","123")
+
+*Main> runParser symbol ";sdfasdfsa\n  123abc"
+Nothing
 \end{verbatim}
-Note the use of the many1 combinator to introduce repetition of any length of at least one,
-and we're again using the munch combinator to throw away leading junk.
+Note the use of many1 to introduce repetition,
+and we're again using munch to throw away leading junk.
 
 \subsection{Syntactic structures}
 Whereas our token parsers dealt with the syntactic primitives of the Woof grammar, 
@@ -383,45 +381,48 @@ by any number of forms as the arguments to which the operator is applied.  We ca
 say that like so:
 \begin{verbatim}
 application =
-    oparen      >>
-    form        >>= \op ->
-    many0 form  >>= \args ->
-    cparen      >>
-    return (AApp op args)
+    openparen    *>
+    pure AApp   <*>
+    form        <*>
+    many0 form  <*
+    closeparen
 \end{verbatim}
-Although this implementation uses the monadic operators >> and >>=, it could
-equivalently have been implemented using the applicative combinators *> and <*>:
+Note that, for now, we're doing all parser sequencing using the Applicative
+combinators -- we don't need to use the monadic ones.  Also, we used pure to
+inject a value -- the function AApp -- into the parser.  pure has no effect on
+the tokens and always succeeds:
 \begin{verbatim}
-application' =
-    oparen        *>
-    pure AApp    <*>
-    form         <*>
-    many0 form   <*
-    cparen
+*Main> runParser (pure 3) ""
+Just (3,"")
+
+*Main> runParser (pure 3) "abc"
+Just (3,"abc")
 \end{verbatim}
+
 Next, we move on to define, which is also a straightforward translation from the grammar:
 \begin{verbatim}
 define =
-    ocurly                       *>
+    opencurly                    *>
     check (== "define") symbol   *>
     pure ADefine                <*>
     symbol                      <*>
     form                        <*
-    ccurly
+    closecurly
 \end{verbatim}
+
 Lambda is more complicated -- not only does it have additional syntax with its parameter list,
 but we also need to ensure that the parameter names are unique.  We can do that using the 
 check combinator again:
 \begin{verbatim}
-lambda =
-    ocurly                          >>
-    check (== "lambda") symbol      >>
-    ocurly                          >>
-    check distinct (many0 symbol)   >>= \params ->
-    ccurly                          >>
-    many1 form                      >>= \bodies ->
-    ccurly                          >>
-    return (ALambda params bodies)
+lambda = 
+    opencurly                       *>
+    check (== "lambda") symbol      *>
+    opencurly                       *>
+    pure ALambda                   <*>
+    check distinct (many0 symbol)  <*>
+    (closecurly                     *>
+     many1 form                    <*
+     closecurly)
   where
     distinct names = length names == length (nub names)
 \end{verbatim}
@@ -435,20 +436,24 @@ define or lambda:
 \begin{verbatim}
 special = define <+> lambda
 \end{verbatim}
-The form parser parsers either a symbol, application, or a special form.  We could just write:
+
+A form is either a symbol, application, or a special form.  We could just write:
 \begin{verbatim}
 form = symbol <+> application <+> special
 \end{verbatim}
+
 except that the types don't match -- symbol's type parameter is a String, whereas the other two
-have ASTs, so we can just fix that by mapping the correct function over symbol:
+have ASTs, so we fix that by mapping the ASymbol function over symbol:
 \begin{verbatim}
 form = fmap ASymbol symbol <+> application <+> special
 \end{verbatim}
+
 The final parser, woof, needs to not only parse all the forms, but also make sure that the
 entire input is consumed.  The end of input check is done with the end parser:
 \begin{verbatim}
 end = switch item
 \end{verbatim}
+
 And we also need to munch any trailing comments and whitespace, so our final woof parser is:
 \begin{verbatim}
 woof = many1 form <* munch end
@@ -456,6 +461,28 @@ woof = many1 form <* munch end
 
 \subsection{Examples}
 Let's look at a few examples of our parser in action:
+\begin{verbatim}
+*Main> runParser woof "; \n   {lambda {x y z} a b (c b a)}end"
+Just ([ALambda ["x","y","z"] 
+               [ASymbol "a",
+                ASymbol "b",
+                AApp (ASymbol "c") 
+                     [ASymbol "b",
+                      ASymbol "a"]],
+       ASymbol "end"],
+      "")
+
+*Main> runParser woof "a b c {define q (f x)}"
+Just ([ASymbol "a",
+       ASymbol "b",
+       ASymbol "c",
+       ADefine "q" (AApp (ASymbol "f") [ASymbol "x"])],"")
+
+*Main> runParser woof "a b c {define q (f x)},"
+Nothing
+\end{verbatim}
+Note that the first two parses consume the entire input, which the last one 
+fails because it can't recognize the trailing comma.
 
 
 
@@ -606,16 +633,16 @@ with the parsing; if either \verb+form+ or close-parenthesis fails, an appropria
 which includes a string and the location of the open parenthesis.  However, if the open parenthesis is not
 successfully parsed, it's a failure but not an error.  Here are some examples to demonstrate this in action:
 \begin{verbatim}
-ghci$ runParser application (countLineCol "oops")
+*Main> runParser application (countLineCol "oops")
 Right' Nothing
 
-ghci$ runParser application (countLineCol "(a b c)")
+*Main> runParser application (countLineCol "(a b c)")
 Right' (Just (AApp (ASymbol "a") [ASymbol "b",ASymbol "c"],[]))
 
-ghci$ runParser application (countLineCol "\n()")
+*Main> runParser application (countLineCol "\n()")
 Left' ("application: missing operator",('(',2,1))
 
-ghci$ runParser application (countLineCol "(a b")
+*Main> runParser application (countLineCol "(a b")
 Left' ("application: missing close parenthesis",('(',1,1))
 \end{verbatim}
 Although the previous version of the \verb+application+ parser could be implemented with just applicative combinators, 
@@ -697,7 +724,7 @@ Right' (Just ([ADefine "fgh"
 \end{verbatim}
 Here are examples showing errors detected by the parser:
 \begin{verbatim}
-ghci$ map (runParser woof . countLineCol) ["()", "(a b", "{define (a b c)}",  
+*Main> map (runParser woof . countLineCol) ["()", "(a b", "{define (a b c)}",  
                                      "{define a}", "{define a b", 
                                      "{lambda (a b c)}", "{lambda {a b a} (c d)}", 
                                      "{lambda {a b (c d)}", "{lambda {a b}}", 
