@@ -820,29 +820,73 @@ Left ("woof: unparsed input",(',',1,2))
 
 
 
-\section{Monad Transformer Stacks}
+\section{Stack Order}
+Not only are the contents of a transformer stack important, but the order of the
+layers as well.  Let's revisit our first woof parser -- what if our stack had
+instead been Maybe/State instead of State/Maybe?
+\begin{verbatim}
+State/Maybe:   s -> Maybe (a, s)
 
-1. Exact vs. relative layer order; 
-2. one instance per stack, even when more than one is applicable --
-how to specify which one?
-3. an inappropriate instance higher-up in the stack can mask a 
-desired instance lower down in the stack -- that's why we had to
-create a replacement for the Alternative type class and provide
-some new instances for it -- to be able to use the right instances
+Maybe/State:   s -> (Maybe a, s)
+\end{verbatim}
 
+given:
+\begin{verbatim}
+import Control.Monad.Trans.Maybe (MaybeT(..))
+import Data.Functor.Identity     (Identity(..))
 
+type Parser' t a = MaybeT (StateT [t] Identity) a
 
+runParser' :: Parser' t a -> [t] -> (Maybe a, [t])
+runParser' p xs = runIdentity $ runStateT (runMaybeT p) xs
+\end{verbatim}
+We can compare it to the earlier parser:
+\begin{verbatim}
+*Main> runParser' (literal 'a') "aqrs"
+(Just 'a',"qrs")
 
-\section{Transformer instance semantics}
+*Main> runParser' (literal 'a') "qrs"
+(Nothing,"rs")
+\end{verbatim}
+Whereas:
+\begin{verbatim}
+*Main> runParser (literal 'a') "qrs"
+Nothing
 
-Pass-through vs. deal-with, examples of each
+*Main> runParser (literal 'a') "aqrs"
+Just ('a',"qrs")
+\end{verbatim}
+The difference is that Maybe/State always returns a modified state, regardless
+of the success of the computation, whereas State/Maybe only returns a modified
+state if the computation is successful.  This means that backtracking doesn't
+work right with Maybe/State -- tokens are consumed even when the parsers
+don't match, as the example shows.
+
+On the other hand, the order of Error and Maybe relative to each other isn't 
+important.  Try it for yourself!
+
+Another important point to note is that our parsers didn't actually specify
+which order -- Maybe/State or State/Maybe -- they prefer, and in fact they will 
+work with either order.  Since our parsers don't specify the stack order, the 
+semantics are ultimately determined by the actual stack we use.
 
 
 
 
 \section{Conclusion}
-Furthur applications of monad transformers to parsing:  junk logging, partial results, 
- non-deterministic parsing using the ListT or LogicT or just list data type
+Monad transformers provide an elegant solution to error reporting in parser
+combinators.  Better yet, they are extensible -- we could go back and add more
+features to our parsers using additional transformers, perhaps extending our
+parser to save partial results, so that if there's an error, it reports the
+progress that it had made before the error.  We could do that using a Writer
+transformer.  Or we check to make sure that all variables are in scope when
+they're used -- using a Reader transformer.  We could even capture whitespace
+and comment tokens, instead of just throwing them away, in case they contained
+valuable information.  And the best part of it is, most of the parsers we already
+wrote would continue to work fine without needing any modifications.  We'd just
+have to set up our transformer stack and modify the relevant parsers! 
+
+
 
 
 \bibliography{Author}
