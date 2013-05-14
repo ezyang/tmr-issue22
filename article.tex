@@ -775,7 +775,7 @@ Right (Just ([ADefine "fgh" (ALambda ["f","x"]
                                      [AApp (ASymbol "f") [ASymbol "x"]])],
        []))
 \end{verbatim}
-Here's the proof showing that the parser correctly report all of the errors 
+Here's the proof showing that the parser correctly reports all of the errors 
 covered by our spec:
 \begin{verbatim}
 *Main> let p = runParser woof . countLineCol
