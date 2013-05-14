@@ -4,7 +4,6 @@
              , FunctionalDependencies
              , UndecidableInstances      #-}
 
-
 import Control.Monad             (liftM, ap)
 import Control.Monad.State       (MonadState (..), StateT(..))
 import Control.Monad.Trans.Class (lift)
@@ -13,6 +12,12 @@ import Control.Applicative       (Applicative(..))
 import Data.List                 (nub)
 
 -- the prelude
+
+type Parse e t a = StateT [t] (MaybeT (Either e)) a
+
+runParser :: Parse e t a -> [t] -> Either e (Maybe (a, [t]))
+runParser p xs = runMaybeT (runStateT p xs)
+
 
 class Applicative f => Plus f where
   zero :: f a
@@ -40,6 +45,20 @@ instance (Monad m, Plus m) => Plus (StateT s m) where
   zero                   =  StateT (const zero)
   StateT f <+> StateT g  =  StateT (\s -> f s <+> g s)
 
+item :: (MonadState [t] m, Plus m) => m t
+item =
+    get >>= \xs -> case xs of
+                        (t:ts) -> put ts *> pure t;
+                        []     -> zero;
+
+check :: (Monad m, Plus m) => (a -> Bool) -> m a -> m a
+check f p =
+    p >>= \x ->
+    if (f x) then return x else zero
+
+satisfy :: (MonadState [t] m, Plus m) => (t -> Bool) -> m t
+satisfy = flip check item
+
 
 class Switch f where
   switch :: f a -> f ()
@@ -53,6 +72,12 @@ instance (Functor m, Switch m) => Switch (StateT s m) where
 
 instance Functor m => Switch (MaybeT m) where
   switch (MaybeT m) = MaybeT (fmap switch m)
+
+not1 :: (MonadState [t] m, Plus m, Switch m) => m a -> m t
+not1 p = switch p *> item
+
+end :: (MonadState [t] m, Plus m, Switch m) => m ()
+end = switch item
 
 
 class Monad m => MonadError e m | m -> e where
@@ -71,6 +96,9 @@ instance MonadError e m => MonadError e (StateT s m) where
 instance MonadError e m => MonadError e (MaybeT m) where
   throwError      =  lift . throwError
   catchError m f  =  MaybeT $ catchError (runMaybeT m) (runMaybeT . f)
+
+commit :: (MonadError e m, Plus m) => e -> m a -> m a
+commit err p = p <+> throwError err
 
 
 data AST
@@ -106,29 +134,6 @@ example = "{define \n\
 \\n\
 \"
 
-item :: (MonadState [t] m, Plus m) => m t
-item =
-    get >>= \xs -> case xs of
-                        (t:ts) -> put ts *> pure t;
-                        []     -> zero;
-
-check :: (Monad m, Plus m) => (a -> Bool) -> m a -> m a
-check f p =
-    p >>= \x ->
-    if (f x) then return x else zero
-
-satisfy :: (MonadState [t] m, Plus m) => (t -> Bool) -> m t
-satisfy = flip check item
-
-not1 :: (MonadState [t] m, Plus m, Switch m) => m a -> m t
-not1 p = switch p *> item
-
-end :: (MonadState [t] m, Plus m, Switch m) => m ()
-end = switch item
-
-commit :: (MonadError e m, Plus m) => e -> m a -> m a
-commit err p = p <+> throwError err
-
 -- the actual parser
 
 
@@ -143,71 +148,65 @@ comment = pure (:) <*> character ';' <*> many0 (not1 $ character '\n')
 
 munch p = many0 (whitespace <+> comment) *> p
 
-ocurly = munch $ character '{'
-ccurly = munch $ character '}'
-oparen = munch $ character '('
-cparen = munch $ character ')'
+opencurly  = munch $ character '{'
+closecurly = munch $ character '}'
+openparen  = munch $ character '('
+closeparen = munch $ character ')'
 symbol = munch $ many1 char
   where char = fmap chr $ satisfy (flip elem (['a' .. 'z'] ++ ['A' .. 'Z']) . chr)
 
-eaOp   =  "application: missing operator"
-eaCls  =  "application: missing close parenthesis"
-edSym  =  "define: missing symbol"
-edForm =  "define: missing form"
-edCls  =  "define: missing close curly"
-elPL   =  "lambda: missing parameter list"
-elPrms =  "lambda: duplicate parameter names"
-elPCls =  "lambda: missing parameter list close curly"
-elBody =  "lambda: missing body form"
-elCls  =  "lambda: missing close curly"
-esName =  "special form: unable to parse"
-ewUnp  =  "woof: unparsed input"
+eAppOper    =  "application: missing operator"
+eAppClose   =  "application: missing close parenthesis"
+eDefSym     =  "define: missing symbol"
+eDefForm    =  "define: missing form"
+eDefClose   =  "define: missing close curly"
+eLamParam   =  "lambda: missing parameter list"
+eLamDupe    =  "lambda: duplicate parameter names"
+eLamPClose  =  "lambda: missing parameter list close curly"
+eLamBody    =  "lambda: missing body form"
+eLamClose   =  "lambda: missing close curly"
+eSpecial    =  "special form: unable to parse"
+eWoof       =  "woof: unparsed input"
 -- other possibilities:  non-symbol in parameter list
 
 application =
-    oparen                       >>= \open ->
-    commit (eaOp, open) form     >>= \op ->
-    many0 form                   >>= \args ->
-    commit (eaCls, open) cparen  >>
+    openparen                             >>= \open ->
+    commit (eAppOper, open) form          >>= \op ->
+    many0 form                            >>= \args ->
+    commit (eAppClose, open) closeparen   >>
     return (AApp op args)
     
 define =
-    ocurly                       >>= \open ->
-    check (== "define") symbol    *>
-    pure ADefine                 <*>
-    commit (edSym, open) symbol  <*>
-    commit (edForm, open) form   <*
-    commit (edCls, open) ccurly  
+    opencurly                            >>= \open ->
+    check (== "define") symbol            *>
+    pure ADefine                         <*>
+    commit (eDefSym, open) symbol        <*>
+    commit (eDefForm, open) form         <*
+    commit (eDefClose, open) closecurly  
     
 lambda =
-    ocurly                                 >>= \open ->
-    check (== "lambda") symbol             >>
-    commit (elPL, open) ocurly             >>= \p_open ->
-    many0 symbol                           >>= \params ->
+    opencurly                                >>= \open ->
+    check (== "lambda") symbol               >>
+    commit (eLamParam, open) opencurly       >>= \p_open ->
+    many0 symbol                             >>= \params ->
     (if distinct params 
         then return ()
-        else throwError (elPrms, p_open))  >>
-    commit (elPCls, p_open) ccurly         >>
-    commit (elBody, open) (many1 form)     >>= \bodies ->
-    commit (elCls, open) ccurly            >>
+        else throwError (eLamDupe, p_open))  >>
+    commit (eLamPClose, p_open) closecurly   >>
+    commit (eLamBody, open) (many1 form)     >>= \bodies ->
+    commit (eLamClose, open) closecurly      >>
     return (ALambda params bodies)
   where
     distinct names = length names == length (nub names)
 
-special = define <+> lambda <+> (ocurly >>= \o -> throwError (esName, o))
+special = define <+> lambda <+> (opencurly >>= \o -> throwError (eSpecial, o))
 
 form = fmap ASymbol symbol <+> application <+> special
 
 endCheck = 
     many0 (whitespace <+> comment) *>
     get >>= \xs -> case xs of
-                        (t:_) -> throwError (ewUnp, t)
+                        (t:_) -> throwError (eWoof, t)
                         []    -> pure ()
 
 woof = many0 form <* endCheck
-
-
-type Parse e t a = StateT [t] (MaybeT (Either e)) a
-
-runParser :: Parse e t a -> [t] -> Either e (Maybe (a, [t]))
-runParser p xs = runMaybeT (runStateT p xs)
