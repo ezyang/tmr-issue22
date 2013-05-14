@@ -4,11 +4,10 @@
              , FunctionalDependencies
              , UndecidableInstances      #-}
 
-import Control.Monad             (liftM, ap)
 import Control.Monad.State       (MonadState (..), StateT(..))
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
-import Control.Applicative       (Applicative(..))
+import Control.Applicative       (Applicative(..), Alternative(..))
 import Data.List                 (nub)
 
 -- the prelude
@@ -18,45 +17,21 @@ type Parse e t a = StateT [t] (MaybeT (Either e)) a
 runParser :: Parse e t a -> [t] -> Either e (Maybe (a, [t]))
 runParser p xs = runMaybeT (runStateT p xs)
 
+many0 = many
+many1 = some
 
-class Applicative f => Plus f where
-  zero :: f a
-  (<+>) :: f a -> f a -> f a
-
-many0 :: Plus f => f a -> f [a]
-many0 p = many1 p <+> pure []
-
-many1 :: Plus f => f a -> f [a]
-many1 p = pure (:) <*> p <*> many0 p
-
-instance Plus Maybe where
-  zero             =  Nothing
-  Nothing  <+>  y  =  y
-  x        <+>  _  =  x
-
-instance (Functor m, Monad m) => Plus (MaybeT m) where
-  zero                     =  MaybeT (return Nothing)
-  MaybeT l  <+>  MaybeT r  =  MaybeT x
-    where
-      x = l >>= \y -> case y of Nothing -> r;
-                                Just _  -> return y;
-
-instance (Monad m, Plus m) => Plus (StateT s m) where
-  zero                   =  StateT (const zero)
-  StateT f <+> StateT g  =  StateT (\s -> f s <+> g s)
-
-item :: (MonadState [t] m, Plus m) => m t
+item :: (MonadState [t] m, Alternative m) => m t
 item =
     get >>= \xs -> case xs of
                         (t:ts) -> put ts *> pure t;
-                        []     -> zero;
+                        []     -> empty;
 
-check :: (Monad m, Plus m) => (a -> Bool) -> m a -> m a
+check :: (Monad m, Alternative m) => (a -> Bool) -> m a -> m a
 check f p =
     p >>= \x ->
-    if (f x) then return x else zero
+    if (f x) then return x else empty
 
-satisfy :: (MonadState [t] m, Plus m) => (t -> Bool) -> m t
+satisfy :: (MonadState [t] m, Alternative m) => (t -> Bool) -> m t
 satisfy = flip check item
 
 
@@ -73,10 +48,10 @@ instance (Functor m, Switch m) => Switch (StateT s m) where
 instance Functor m => Switch (MaybeT m) where
   switch (MaybeT m) = MaybeT (fmap switch m)
 
-not1 :: (MonadState [t] m, Plus m, Switch m) => m a -> m t
+not1 :: (MonadState [t] m, Alternative m, Switch m) => m a -> m t
 not1 p = switch p *> item
 
-end :: (MonadState [t] m, Plus m, Switch m) => m ()
+end :: (MonadState [t] m, Alternative m, Switch m) => m ()
 end = switch item
 
 
@@ -97,8 +72,8 @@ instance MonadError e m => MonadError e (MaybeT m) where
   throwError      =  lift . throwError
   catchError m f  =  MaybeT $ catchError (runMaybeT m) (runMaybeT . f)
 
-commit :: (MonadError e m, Plus m) => e -> m a -> m a
-commit err p = p <+> throwError err
+commit :: (MonadError e m, Alternative m) => e -> m a -> m a
+commit err p = p <|> throwError err
 
 
 data AST
@@ -140,13 +115,13 @@ example = "{define \n\
 type Error = (String, Token)
 
 
-character :: (MonadState [Token] m, Plus m) => Char -> m Token
+character :: (MonadState [Token] m, Alternative m) => Char -> m Token
 character c = satisfy ((==) c . chr)
 
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f" . chr)
 comment = pure (:) <*> character ';' <*> many0 (not1 $ character '\n')
 
-munch p = many0 (whitespace <+> comment) *> p
+munch p = many0 (whitespace <|> comment) *> p
 
 opencurly  = munch $ character '{'
 closecurly = munch $ character '}'
@@ -199,12 +174,12 @@ lambda =
   where
     distinct names = length names == length (nub names)
 
-special = define <+> lambda <+> (opencurly >>= \o -> throwError (eSpecial, o))
+special = define <|> lambda <|> (opencurly >>= \o -> throwError (eSpecial, o))
 
-form = fmap ASymbol symbol <+> application <+> special
+form = fmap ASymbol symbol <|> application <|> special
 
 endCheck = 
-    many0 (whitespace <+> comment) *>
+    many0 (whitespace <|> comment) *>
     get >>= \xs -> case xs of
                         (t:_) -> throwError (eWoof, t)
                         []    -> pure ()
