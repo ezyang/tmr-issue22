@@ -13,7 +13,7 @@
 
 \begin{introduction}
 Parsing is "the process of analysing a string of symbols according to the rules
-of a formal grammar" (Wikipedia), with the general goal of building a tree
+of a formal grammar" \cite{wikipedia_parsing}, with the general goal of building a tree
 representing the structure of the parsed input, upon which further operations
 such as interpretation or code generation are then performed.
 
@@ -35,6 +35,11 @@ build a simple parser, and then we'll add in error reporting.
 Parser combinators are an excellent approach for building parsers that are easy
 to maintain and expressive.  In addition, they benefit from host-language
 integration, allowing them to snarf features such as type systems.
+
+There are such many excellent papers for reading about parser combinators, such
+as this \cite{wadler}, this \cite{hutton}, and this \cite{leijen}.  In fact, the
+inspiration and terminology for much of this article is drawn directly from
+those references.
 
 Let's make a quick pass through a minimal parser combinator library so that we
 can see them in action before we move on to the real stuff.  Without any 
@@ -148,10 +153,10 @@ all while taking advantage of monad transformers to keep it modular.
 
 
 \section{Monad transformers}
-Monad transformers allow monads to be modularly combined to form new monads
+Monad transformers \cite{liang} allow monads to be modularly combined to form new monads
 which combine the semantics of their constituents.  That's exactly what we need
 to do to build parsers.
-We'll try to use the standard transformers/mtl libraries as much as possible, 
+We'll try to use the standard transformers/mtl \cite{mtl} libraries as much as possible, 
 since they're easy to obtain, easy to use, and quite effective in practice, but
 occasionally we'll have to make an extension to avoid certain type class
 instances.
@@ -190,7 +195,7 @@ Woof, a simple dialect of Lisp.  We'll be
 progressively adding features to a simplistic initial implementation
 on our way to creating a practical, feature-rich and usable parser.
 
-The language definition in pseudo-BNF is:
+The language definition in pseudo-BNF \cite{bnf} is:
 
 \begin{verbatim}
 Woof         :=   Form(+)
@@ -843,7 +848,7 @@ Left ("woof: unparsed input",(',',1,2))
 
 \section{Stack Order}
 Not only are the contents of a transformer stack important, but the order of the
-layers as well.  Let's revisit our first woof parser -- what if our stack had
+layers as well \cite{stack}.  Let's revisit our first woof parser -- what if our stack had
 instead been Maybe/State instead of State/Maybe?
 \begin{verbatim}
 State/Maybe:   s -> Maybe (a, s)
@@ -912,6 +917,6 @@ have to set up our transformer stack and modify the relevant parsers!
 
 
 
-\bibliography{Author}
+\bibliography{article}
 
 \end{document}
