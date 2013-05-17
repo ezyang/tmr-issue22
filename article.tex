@@ -45,20 +45,46 @@ The inspiration and and much of the names used in this article are drawn
 from those references.
 
 Let's make a quick pass through a minimal parser combinator library so that we
-can see them in action before we move on to the hard stuff.  Without any 
-further ado, here's the code:
-\begin{verbatim}
-import Control.Applicative  (Applicative(..), Alternative(..))
-import Control.Monad        (liftM, ap)
+can see them in action before we move on to the hard stuff.  There are three
+main pieces of the code:
+\begin{itemize}
+ \item a Parser datatype
+ \item parser-specific combinators
+ \item type class instances
+\end{itemize}
 
+\subsection{Parser datatype}
+\begin{verbatim}
 newtype Parser t a = 
     Parser {getParser :: [t] -> Maybe ([t], a)}
+\end{verbatim}
+This type definition says that a Parser is a function
+of a list of tokens, producing a new list of tokens and a result
+value, and possibly failing.
 
+\subsection{Parser-specific combinators}
+\begin{verbatim}
 item :: Parser t t
 item = Parser f
   where 
     f [] = Nothing
     f (x:xs) = Just (xs, x)
+
+literal :: Eq t => t -> Parser t t
+literal x = afilter (== x) item
+\end{verbatim}
+Next is the \verb+item+ parser, the simplest parser we'll deal with.  All it does is 
+consume a single token if available, and fail otherwise.
+
+\subsection{Type class instances}
+For running parsers in sequence, we'll use the combinators from the Monad and
+Applicative type classes.  There's a little bit of book-keeping involved in the
+Monad instance -- it has to make sure that the correct token list is used by
+each parser -- but once we have a Monad instance, the Applicative and Functor
+instances can be handled by imports \verb+ap+ and \verb+liftM+ from Control.Monad.
+\begin{verbatim}
+import Control.Applicative  (Applicative(..), Alternative(..))
+import Control.Monad        (liftM, ap)
 
 instance Monad (Parser t) where
   return x = Parser (\ts -> Just (ts, x))
@@ -71,8 +97,13 @@ instance Functor (Parser t) where
   
 instance Applicative (Parser t) where
   pure = return
-  (<*>) = ap          
+  (<*>) = ap 
+\end{verbatim}
 
+For choosing between alternatives, the Alternative type class will do, so we 
+create an instance that is defined in terms of the Alternative instance of the
+underlying result type, \verb+Maybe+.
+\begin{verbatim}
 instance Alternative (Parser t) where
   empty = Parser (const empty)
   Parser l <|> Parser r = Parser (\ts -> l ts <|> r ts)
@@ -81,25 +112,9 @@ instance Alternative (Parser t) where
 check :: (Monad f, Alternative f) => (a -> Bool) -> f a -> f a
 check p m =
     m >>= \x -> if p x then return x else empty
-
-literal :: Eq t => t -> Parser t t
-literal x = afilter (== x) item
 \end{verbatim}
-First, we define the Parser type, which says that a Parser is a function
-of a list of tokens, producing a new list of tokens and a result
-value, and possibly failing.
-Next is the \verb+item+ parser, the simplest parser we'll deal with.  All it does is 
-consume a single token if available, and fail otherwise.
-For running parsers in sequence, we'll use the combinators from the Monad and
-Applicative type classes.  There's a little bit of book-keeping involved in the
-Monad instance -- it has to make sure that the correct token list is used by
-each parser -- but once we have a Monad instance, the Applicative and Functor
-instances can be handled by imports \verb+ap+ and \verb+liftM+ from Control.Monad.
-For choosing between alternatives, the Alternative type class will do, so we create
-an instance that is defined partly in terms of the Alternative instance of the
-underlying result type, \verb+Maybe+.
-Last are a couple of convenience combinators for creating specific token parsers.
 
+\subsection{Examples}
 Now for some examples:  first, let's see \verb+item+ in action.  It fails on empty lists,
 and succeeds consuming one token otherwise:
 \begin{verbatim}
@@ -147,8 +162,8 @@ Just ("acde",'b')
 *Main> getParser (literal 'a' <|> literal 'b') "cdeab"
 Nothing
 \end{verbatim}
-In the rest of this article, we'll be reworking these basic parser combinators.
-We'll be simplifying the implementations, extending the types of the results,
+In the rest of this article, we'll be reworking these basic parser combinators,
+by improving the implementations and extending the result types,
 all while taking advantage of monad transformers to keep it modular.
 
 
