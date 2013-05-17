@@ -66,7 +66,10 @@ instance MonadError e (Either e) where
   
 instance MonadError e m => MonadError e (StateT s m) where
   throwError      =  lift . throwError
-  catchError m f  =  StateT (\s -> catchError (runStateT m s) (\e -> runStateT (f e) s))
+  catchError m f  =  StateT g
+    where
+      g s = catchError (runStateT m s) 
+                       (\e -> runStateT (f e) s)
 
 instance MonadError e m => MonadError e (MaybeT m) where
   throwError      =  lift . throwError

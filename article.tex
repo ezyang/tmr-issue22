@@ -339,7 +339,9 @@ instance Switch Maybe where
   switch Nothing  = Just ()
 
 instance (Functor m, Switch m) => Switch (StateT s m) where
-  switch (StateT f) = StateT (\s -> fmap (const ((), s)) . switch $ f s)
+  switch (StateT f) = StateT g
+    where 
+      g s = fmap (const ((), s)) . switch $ f s
 
 not1 :: (MonadState [t] m, Alternative m, Switch m) => m a -> m t
 not1 p = switch p *> item
@@ -349,8 +351,17 @@ With \verb+munch+ in hand, we can now fix \verb+opencurly+ and try it out:
 \begin{verbatim}
 opencurly = munch $ literal '{'
 
-*Main> map (runParser opencurly) [";abc\n  {def", "{def", "(def", "}def"]
-[Just ('{',"def"),Just ('{',"def"),Nothing,Nothing]
+*Main> runParser opencurly ";abc\n{def"
+Just ('{', "def")
+
+*Main> runParser opencurly "{def"
+Just ('{', "def")
+
+*Main> runParser opencurly "(def"
+Nothing
+
+*Main> runParser opencurly "}def"
+Nothing
 \end{verbatim}
 
 Excellent!  Now the \verb+opencurly+ parser correctly throws away whitespace 
@@ -553,8 +564,8 @@ errors.  Compare:
 *Main> runParser (satisfy (== 'a') <|> satisfy (== 'b')) "babc"
 Right (Just ('b',"abc"))
 
-*Main> runParser (throwError "no backtracking!" <|> satisfy (== 'b')) "babc"
-Left "no backtracking!"
+*Main> runParser (throwError "no!" <|> satisfy (== 'b')) "babc"
+Left "no!"
 \end{verbatim}
 We'll take advantage of this backtracking restriction to produce accurate error
 messages.
@@ -577,12 +588,15 @@ instance MonadError e (Either e) where
   
 instance MonadError e m => MonadError e (StateT s m) where
   throwError      =  lift . throwError
-  catchError m f  =  StateT (\s -> catchError (runStateT m s) 
-                                              (\e -> runStateT (f e) s))
+  catchError m f  =  StateT g
+    where
+      g s = catchError (runStateT m s) 
+                       (\e -> runStateT (f e) s)
 
 instance MonadError e m => MonadError e (MaybeT m) where
   throwError      =  lift . throwError
-  catchError m f  =  MaybeT $ catchError (runMaybeT m) (runMaybeT . f)
+  catchError m f  =  MaybeT $ catchError (runMaybeT m) 
+                                         (runMaybeT . f)
 \end{verbatim}
 Note how the StateT and MaybeT instances don't really do anything with the
 errors; they just pass the error on through to the next level.  That's why they
@@ -629,14 +643,16 @@ character lists, but we now need them to work on token lists.
 The cause of the problem is the \verb+literal+ combinator, so we
 replace it with one for token lists:
 \begin{verbatim}
-character :: (MonadState [Token] m, Alternative m) => Char -> m Token
+character :: (MonadState [Token] m, 
+              Alternative m) => Char -> m Token
 character c = satisfy ((==) c . chr)
 \end{verbatim}
 
 And now our token parsers are:
 \begin{verbatim}
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f" . chr)
-comment = pure (:) <*> character ';' <*> many0 (not1 $ character '\n')
+comment = pure (:) <*> character ';' <*> many0 chars
+  where chars = not1 $ character '\n'
 
 munch p = many0 (whitespace <+> comment) *> p
 
@@ -645,7 +661,8 @@ ccurly = munch $ character '}'
 oparen = munch $ character '('
 cparen = munch $ character ')'
 symbol = munch $ many1 char
-  where char = fmap chr $ satisfy (flip elem (['a' .. 'z'] ++ ['A' .. 'Z']) . chr)
+  where char = fmap chr $ satisfy (f . chr)
+        f = flip elem (['a' .. 'z'] ++ ['A' .. 'Z'])
 \end{verbatim}
 
 The only differences were the replacement of \verb+literal+ with \verb+character+ 
@@ -767,7 +784,9 @@ special form can be reported.  To accomplish this, we can extend the \verb+speci
 parser with a third alternative, which results in an error if it can parse
 an open curly brace, but in a backtracking failure if not:
 \begin{verbatim}
-special = define <+> lambda <+> (ocurly >>= \o -> throwError (esName, o))
+special = define   <+> 
+          lambda   <+> 
+          (ocurly >>= \o -> throwError (esName, o))
 \end{verbatim}
 
 The \verb+form+ parser doesn't have to be changed:
@@ -796,16 +815,17 @@ While correct input will be parsed in the same way by our new parsers, incorrect
 accurately reported as such.  Successful results will be slightly different, however -- there is now an extra
 constructor wrapper around the value:
 \begin{verbatim}
-*Main> runParser woof (countLineCol "{define fgh {lambda {f x} (f x)}}")
+*Main> let p = runParser woof . countLineCol
+
+*Main> p "{define fgh {lambda {f x} (f x)}}"
 Right (Just ([ADefine "fgh" (ALambda ["f","x"] 
-                                     [AApp (ASymbol "f") [ASymbol "x"]])],
+                                     [AApp (ASymbol "f") 
+                                           [ASymbol "x"]])],
        []))
 \end{verbatim}
 Here's the proof showing that the parser correctly reports all of the errors 
 covered by our spec:
 \begin{verbatim}
-*Main> let p = runParser woof . countLineCol
-
 *Main> p "()"
 Left ("application: missing operator",('(',1,1))
 
