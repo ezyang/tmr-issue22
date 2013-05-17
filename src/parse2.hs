@@ -80,9 +80,7 @@ commit err p = p <|> throwError err
 
 
 data AST
-    = ANumber Integer
-    | ASymbol String
-    | AString String
+    = ASymbol String
     | ALambda [String] [AST]
     | ADefine String AST
     | AApp    AST  [AST]
