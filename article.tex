@@ -192,10 +192,9 @@ we'll have to use for some of the later code in this article.
 
 
 \section{Introducing Woof:  a Simple Lisp}
-The simple language we'll use as a motivation for building parsers is 
-Woof, a simple dialect of Lisp.  We'll be 
-progressively adding features to a simplistic initial implementation
-on our way to creating a practical, feature-rich and usable parser.
+The simple language we'll use as a motivation for building parsers is Woof, a 
+simple dialect of Lisp.  We'll be progressively adding features to a simple 
+initial implementation on our way to creating an error-reporting parser.
 
 The language definition in pseudo-BNF \cite{bnf} is:
 
@@ -204,19 +203,19 @@ Woof         :=   Form(+)
 
 Form         :=   Symbol  |  Special  |  Application
 
-Symbol       :=  [a-zA-Z](+)
+Symbol       :=   [a-zA-Z](+)
 
-Special      :=  '{'  ( Define  |  Lambda )  '}'
+Special      :=   '{'  ( Define  |  Lambda )  '}'
 
-Define       :=  'define'  Symbol  Form
+Define       :=   'define'  Symbol  Form
 
-Lambda       :=  'lambda'  '{'  Symbol(*)  '}'  Form(+)
+Lambda       :=   'lambda'  '{'  Symbol(*)  '}'  Form(+)
 
-Application  :=  '('  Form(+)  ')'
+Application  :=   '('  Form(+)  ')'
 
-Whitespace   :=  \s+
+Whitespace   :=   \s+
 
-Comment      :=  ';'  (not '\n')(*)
+Comment      :=   ';'  (not '\n')(*)
 \end{verbatim}
 
 With the additional rule that whitespace and comments may appear in any 
@@ -235,15 +234,13 @@ amount before any token.  Tokens are:
 \section{Example 1: Recognition and Tree-Building}
 
 \subsection{Preliminaries}
-The first Woof parser we build will be responsible for determining whether input
-text conforms to the language definition and simultaneously building an 
-Abstract Syntax Tree representing of the structure of the recognized input.
+Our first Woof parser will be responsible for: 1) determining whether input
+text conforms to the language definition, and 2) building an 
+Abstract Syntax Tree representing the structure of the parsed input.
 Here's the AST definition we'll use:
 \begin{verbatim}
 data AST
-    = ANumber Integer
-    | ASymbol String
-    | AString String
+    = ASymbol String
     | ALambda [String] [AST]
     | ADefine String AST
     | AApp    AST  [AST]
@@ -261,14 +258,15 @@ runParser = runStateT
 Now let's get down to the business of building parsers, starting with parsers
 for our most basic syntactic elements:  tokens.
 These include the four braces, symbols, strings, numbers, whitespace, and comments.
-To recognize braces, we need to use the item and check combinators to build a new
- combinator, satisfy, that checks whether the next character meets a condition:
+To recognize braces, we need to use the \verb+item+ and \verb+check+ 
+combinators to build a new combinator, \verb+satisfy+, that checks whether 
+the next character meets a condition:
 \begin{verbatim}
 satisfy :: (MonadState [t] m, Alternative m) => (t -> Bool) -> m t
 satisfy = flip check item
 \end{verbatim}
 
-And a the \verb+literal+ combinator:
+And here's the slightly modified \verb+literal+ combinator:
 \begin{verbatim}
 literal :: (Eq t, MonadState [t] m, Alternative m) => t -> m t
 literal c = satisfy ((==) c)
@@ -297,7 +295,7 @@ Nothing
 Of course not -- we haven't told it how to skip comments and whitespace yet!
 Let's do that now, first by defining the whitespace and comment patterns, then
 by creating a \verb+munch+ combinator that takes in a parser, 
-throws away all leading junk, then runs the parser:
+throws away all leading junk, and finally runs the parser:
 \begin{verbatim}
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
 comment = pure (:) <*> literal ';' <*> many0 (not1 $ literal '\n')
@@ -329,8 +327,8 @@ Nothing
 Nothing
 \end{verbatim}
 
-The comment parser uses a new combinator, \verb+not1+, which is built out of a 
-new type class, Switch, which models computations which can be switched from
+The comment parser uses a new combinator, \verb+not1+, built out of a 
+type class, Switch, modeling computations which can be switched from
 successful to failing and vice versa:
 \begin{verbatim}
 class Switch f where
@@ -400,7 +398,7 @@ and we're again using \verb+munch+ to throw away leading junk.
 Whereas our token parsers dealt with the syntactic primitives of the Woof grammar, 
 the remaining parsers will have to implement grammar rules that combine the tokens
 into syntactic structures.
-The first combining form is a function application.  The rule says that it's delimited
+The first combining form is function application.  The rule says that it's delimited
 by matching parentheses, in between which must appear one form as the operator, followed
 by any number of forms as the arguments to which the operator is applied.  We can
 say that like so:
@@ -413,7 +411,7 @@ application =
     closeparen
 \end{verbatim}
 
-Note that, for now, we're doing all parser sequencing using the Applicative
+Note that all the parser sequencing is done using Applicative
 combinators -- we don't need to use the monadic ones.  Also, we used \verb+pure+ 
 to inject a value -- the function \verb+AApp+ -- into the parser.  \verb+pure+ 
 has no effect on the tokens and always succeeds:
@@ -425,8 +423,8 @@ Just (3,"")
 Just (3,"abc")
 \end{verbatim}
 
-Next, we move on to \verb+define+, which is also a straightforward translation 
-from the grammar:
+Next, we move on to \verb+define+.
+A straightforward translation from the grammar produces:
 \begin{verbatim}
 define =
     opencurly                    *>
@@ -437,9 +435,9 @@ define =
     closecurly
 \end{verbatim}
 
-Lambda is more complicated -- not only does it have additional syntax with its parameter list,
-but we also need to ensure that the parameter names are unique.  We can do that using the 
-\verb+check+ combinator again:
+On to Lambda.  Not only does Lambda have additional syntax with its parameter 
+list, but we also need to ensure that the parameter names are unique.  We can 
+do that using the \verb+check+ combinator again:
 \begin{verbatim}
 lambda = 
     opencurly                       *>
@@ -453,11 +451,11 @@ lambda =
   where
     distinct names = length names == length (nub names)
 \end{verbatim}
-If the symbols are distinct, the parameter list subparser will succeed, and parsing will
-continue; if there's a repeated symbol, the parsing will stop with a failure.
+If the symbols are distinct, the parameter list subparser will succeed,
+whereas if there's a repeated symbol, it will fail.
 
 \subsection{Finishing touches}
-Now all we have left to do is to define the \verb+special+, \verb+form+ (which 
+All we have still to do is to define the \verb+special+, \verb+form+ (which 
 we've already used to build the previous parsers), and \verb+woof+ parsers.  
 The special parser is simple -- it parses either define or lambda:
 \begin{verbatim}
@@ -470,7 +468,7 @@ form = symbol <+> application <+> special
 \end{verbatim}
 
 except that the types don't match -- \verb+symbol+'s type parameter is a String, 
-whereas the other two have ASTs, so we fix that by mapping the \verb+ASymbol+ 
+whereas the other two have ASTs.  We fix that by mapping the \verb+ASymbol+ 
 function over \verb+symbol+:
 \begin{verbatim}
 form = fmap ASymbol symbol <+> application <+> special
@@ -478,13 +476,13 @@ form = fmap ASymbol symbol <+> application <+> special
 
 The final parser, \verb+woof+, needs to not only parse all the forms, but also 
 make sure that the entire input is consumed.  The end of input check is done 
-with the end parser:
+with the \verb+end+ parser:
 \begin{verbatim}
 end = switch item
 \end{verbatim}
 
-And we also need to munch any trailing comments and whitespace, so our final 
-woof parser is:
+We also need to munch any trailing comments and whitespace -- otherwise \verb+end+
+would fail -- so the final woof parser is:
 \begin{verbatim}
 woof = many1 form <* munch end
 \end{verbatim}
@@ -512,7 +510,7 @@ Just ([ASymbol "a",
 Nothing
 \end{verbatim}
 Note that the first two parses consume the entire input, while the last one 
-fails because it can't recognize the trailing comma.
+fails because it doesn't recognize the trailing comma.
 
 
 
