@@ -18,31 +18,34 @@ representing the structure of the parsed input, upon which further operations
 such as interpretation or code generation are then performed.
 
 In addition to recognizing a stream of tokens and building a parse tree, a
-real-world parser must recognize faulty input as such, and accurately report the
-location and cause of the failure.  But how -- what generates a parse error,
+real-world parser must recognize faulty input, and accurately report the
+location and cause of the problem.  But how -- what generates a parse error,
 what information is included in the error, how do error-reporting parsers
 compose?
 
 Monad transformers provide a clean and simple answer to these questions.
 We'll use them to build a parser combinator library, then we'll use the library
-build a simple parser, and then we'll add in error reporting.
+to build a simple parser, and finally we'll add in error reporting.
 \end{introduction}
 
 
 
 
 \section{Parser Combinators}
-Parser combinators are an excellent approach for building parsers that are easy
-to maintain and expressive.  In addition, they benefit from host-language
-integration, allowing them to snarf features such as type systems.
+Parser combinators are an excellent approach for building expressive parsers 
+that are easy to maintain.  In addition, they benefit from host-language
+integration, allowing them to snarf features such as type systems and test 
+frameworks.
 
-There are such many excellent papers for reading about parser combinators, such
-as this \cite{wadler}, this \cite{hutton}, and this \cite{leijen}.  In fact, the
-inspiration and terminology for much of this article is drawn directly from
-those references.
+There are many excellent papers on parser combinators, such
+as this \cite{wadler} classic Wadler paper on non-deterministic parser combinators, 
+Hutton's paper which covers factoring parsers into smaller pieces \cite{hutton}, 
+and Leijen's Parsec paper \cite{leijen}.  
+The inspiration and and much of the names used in this article are drawn 
+from those references.
 
 Let's make a quick pass through a minimal parser combinator library so that we
-can see them in action before we move on to the real stuff.  Without any 
+can see them in action before we move on to the hard stuff.  Without any 
 further ado, here's the code:
 \begin{verbatim}
 import Control.Applicative  (Applicative(..), Alternative(..))
@@ -86,7 +89,7 @@ First, we define the Parser type, which says that a Parser is a function
 of a list of tokens, producing a new list of tokens and a result
 value, and possibly failing.
 Next is the \verb+item+ parser, the simplest parser we'll deal with.  All it does is 
-consume a single token if available, and succeed otherwise.
+consume a single token if available, and fail otherwise.
 For running parsers in sequence, we'll use the combinators from the Monad and
 Applicative type classes.  There's a little bit of book-keeping involved in the
 Monad instance -- it has to make sure that the correct token list is used by
@@ -108,9 +111,8 @@ Just ("bcde",'a')
 \end{verbatim}
 
 We can run parsers in sequence using the Applicative combinators.  First one parser
-is run, then the second.  Note that the token position is handled such that the
-second parser sees the token list output by the first parser, and that both parsers
-must succeed in order for the entire parser to succeed:
+is run, then the second, and the token position is threaded between the two.
+Note that both parsers must succeed in order for the combined parser to succeed:
 \begin{verbatim}
 *Main> getParser (item *> item) "abcde"
 Just ("cde",'b')
@@ -122,8 +124,8 @@ Just ("cde",('a','b'))
 Nothing
 \end{verbatim}
 
-Parsers built out of \verb+literal+ only succeed when the next token matches the given
-one:
+Parsers built out of \verb+literal+ only succeed when the next token matches 
+the given one:
 \begin{verbatim}
 *Main> getParser (literal 'a') "abcde"
 Just ("bcde",'a')
@@ -153,23 +155,23 @@ all while taking advantage of monad transformers to keep it modular.
 
 
 \section{Monad transformers}
-Monad transformers \cite{liang} allow monads to be modularly combined to form new monads
-which combine the semantics of their constituents.  That's exactly what we need
-to do to build parsers.
+Monad transformers \cite{liang} allow monads to be modularly combined to form 
+new, more complicated monads; the combined monads support all the operations of
+their constituents.  Doing just that -- combining multiple monads into a stack --
+we can build semantically rich yet modular parsers.
 We'll try to use the standard transformers/mtl \cite{mtl} libraries as much as possible, 
 since they're easy to obtain, easy to use, and quite effective in practice, but
-occasionally we'll have to make an extension to avoid certain type class
-instances.
+occasionally we'll have to make a slight modification or extensions.
 
 First, note that the parser type we used earlier -- \verb+[t] -> Maybe ([t], a)+
--- can be built out of the StateT monad transformer applied to Maybe, so the new
-parser type is:
+-- can be built out of the StateT monad transformer applied to Maybe.  We can 
+now define the new parser type as:
 \begin{verbatim}
 type Parser t a = StateT [t] Maybe a
 \end{verbatim}
 
-Now we can build the \verb+item+ parser using the combinators from MonadState, 
-since its token lists are the 'state' that it modifies.
+We can build the \verb+item+ parser using the combinators from MonadState --
+token lists are the 'state' that \verb+item+ must inspect and modify:
 \begin{verbatim}
 {-# LANGUAGE   FlexibleContexts  #-}
 
