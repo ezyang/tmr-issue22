@@ -516,30 +516,32 @@ fails because it doesn't recognize the trailing comma.
 
 
 \section{Example 2: error-reporting}
-While our first parser worked great when the input was valid, it wasn't helpful
-at all when the input was malformed.  We'd like it to produce an error message
-that tells us what the problem was and where it was encountered whenever bad
-input is encountered.  Otherwise, we'd waste time finding the problem by eye 
--- not a lot of fun.  
+While our first parser worked great on valid input, it wasn't helpful
+when the input was malformed.  When the parser finds bad input, we'd like it to 
+produce an informative error, indicating what and where the problem was.  
+This allows a user to quickly find and correct problems.
 
-To solve this problem, let's start with an informal spec outlining the error
-messages that we expect to get, and the malformed input that causes each of them: 
+Let's start with an informal spec of different cases of malformed input, along 
+with the error messages that should be reported: 
 \begin{itemize}
-\item application: missing operator:  \begin{verbatim}()\end{verbatim}
-\item application: missing close parenthesis:  \begin{verbatim}(a b\end{verbatim}
-\item define: missing symbol:  \begin{verbatim}{define (a b c)}\end{verbatim}
-\item define: missing form:  \begin{verbatim}{define a}\end{verbatim}
-\item define: missing close curly:  \begin{verbatim}{define a b\end{verbatim}
-\item lambda: missing parameter list:  \begin{verbatim}{lambda (a b c)}\end{verbatim}
-\item lambda: duplicate parameter names:  \begin{verbatim}{lambda {a b a} (c d)}\end{verbatim}
-\item lambda: missing parameter list close curly:  \begin{verbatim}{lambda {a b (c d)}\end{verbatim}
-\item lambda: missing body form:  \begin{verbatim}{lambda {a b}}\end{verbatim}
-\item lambda: missing close curly:  \begin{verbatim}{lambda {a b} (c d)\end{verbatim}
-\item special form: unable to parse:  \begin{verbatim}{defin x y}\end{verbatim}
-\item woof: unparsed input:  \begin{verbatim}a,b\end{verbatim}
+  \item application: missing operator:  \begin{verbatim}()\end{verbatim}
+  \item application: missing close parenthesis:  \begin{verbatim}(a b\end{verbatim}
+  \item define: missing symbol:  \begin{verbatim}{define (a b c)}\end{verbatim}
+  \item define: missing form:  \begin{verbatim}{define a}\end{verbatim}
+  \item define: missing close curly:  \begin{verbatim}{define a b\end{verbatim}
+  \item lambda: missing parameter list:  \begin{verbatim}{lambda (a b c)}\end{verbatim}
+  \item lambda: duplicate parameter names:  \begin{verbatim}{lambda {a b a} (c d)}\end{verbatim}
+  \item lambda: missing parameter list close curly:  \begin{verbatim}{lambda {a b (c d)}\end{verbatim}
+  \item lambda: missing body form:  \begin{verbatim}{lambda {a b}}\end{verbatim}
+  \item lambda: missing close curly:  \begin{verbatim}{lambda {a b} (c d)\end{verbatim}
+  \item special form: unable to parse:  \begin{verbatim}{defin x y}\end{verbatim}
+  \item woof: unparsed input:  \begin{verbatim}a,b\end{verbatim}
 \end{itemize}
-To do this, we're going to bring in a second monad transformer type class -- MonadError -- and
-another monad transformer datatype -- MaybeT.  Our parser stack and runParser function are now:
+To allow error reporting in our parsers, we first need to extend our monad stack, 
+adding in a layer for errors.  We'll use a second monad transformer type class 
+-- MonadError, replace the Maybe layer with its corresponding transformer datatype 
+MaybeT, and add in an Either layer on the bottom of the stack.  Our parser stack 
+and \verb+runParser+ function are now:
 \begin{verbatim}
 type Parse e t a = StateT [t] (MaybeT (Either e)) a
 
@@ -547,7 +549,10 @@ runParser :: Parse e t a -> [t] -> Either e (Maybe (a, [t]))
 runParser p xs = runMaybeT (runStateT p xs)
 \end{verbatim}
 
-A parser has three different possible results:  success, failure, and error:
+While our previous parsers had two different results -- Nothing and Just ... --
+our new parsers have three possible results:  success, failure, and error.  Note
+that successful and failing parses are wrapped in an additional \verb+Right+
+constructor:
 \begin{verbatim}
 *Main> runParser item "abc"
 Right (Just ('a',"bc"))
@@ -558,6 +563,7 @@ Right Nothing
 *Main> runParser (throwError "oops!") ""
 Left "oops!"
 \end{verbatim}
+
 Although the \verb+<|>+ combinator can recover from failures, it can't recover from
 errors.  Compare:
 \begin{verbatim}
@@ -572,8 +578,8 @@ messages.
 
 \subsection{Type Class Preliminaries}
 Unfortunately, the standard MonadError instance for the \verb+Either+ datatype does
-not fit our needs -- it requires an \verb+Error+ constraint that we do not want.  To
-solve this problem, we'll implement our own MonadError type class, based on the
+not fit our needs -- it requires an \verb+Error+ constraint that we do not want.
+We'll implement our own MonadError type class, based on the
 standard one, and instances of it.  We'll need an instance for each member of
 our stack -- Either, StateT, and MaybeT: 
 \begin{verbatim}
@@ -615,8 +621,8 @@ instance Functor m => Switch (MaybeT m) where
 \end{verbatim}
 
 \subsection{Reporting position}
-To be able to report the position of the error, we'll pre-process the input
-string, calculating the line and column number of each character.  Then instead 
+To report error positionr, we'll pre-process the input
+string to calculate the line and column number of each character.  Then instead 
 of our parsers operating on a list of characters, they'll operate on a list of 
 Tokens, where a Token is a character tupled up with a line number and column 
 number, which we'll express with a simple typedef and some accessor functions:
@@ -641,7 +647,7 @@ By adding the position to the input, we've created a new problem
 for ourselves: our original token parsers operated on 
 character lists, but we now need them to work on token lists.  
 The cause of the problem is the \verb+literal+ combinator, so we
-replace it with one for token lists:
+replace it with a similar one for token lists:
 \begin{verbatim}
 character :: (MonadState [Token] m, 
               Alternative m) => Char -> m Token
@@ -701,14 +707,16 @@ commit err p = p <|> throwError err
 This combinator takes two arguments: 1. an error value, and 2. a monadic 
 computation.  It first tries to run the computation, and if the computation 
 fails, generates an error whose contents are the first argument.  The 
-definition of 'failure' is provided by the Alternative instance of \verb+m+. So 
-what data do we want to include in our errors?  A String describing the error 
-and a token reporting the position should describe the error decently:
+definition of 'failure' is provided by the Alternative instance of \verb+m+.
+
+What data do we want to include in our errors?  A String describing the error 
+and a token reporting the position will describe the error decently:
 \begin{verbatim}
 type Error = (String, Token)
 \end{verbatim}
 
-Now lets start with \verb+application+ as our first modified, error-reporting parser:
+Now let's start with \verb+application+ as our first modified, error-reporting 
+parser:
 \begin{verbatim}
 application =
     openparen                             >>= \open ->
@@ -719,8 +727,8 @@ application =
 \end{verbatim}
 This parser works by running the open-parenthesis parser, capturing its value 
 in \verb+open+, and continuing with the parsing; if either \verb+form+ or 
-close-parenthesis fails, an appropriate error can be generated which includes 
-a string and the location of the open parenthesis.  However, if the open 
+close-parenthesis fails, an appropriate error is generated with a message and 
+the location of the open parenthesis.  However, if the open 
 parenthesis is not successfully parsed, it's a failure but not an error.  
 Examples:
 \begin{verbatim}
@@ -739,7 +747,7 @@ Left ("application: missing close parenthesis",('(',1,1))
 
 Although the previous version of the \verb+application+ parser was implemented 
 with just applicative combinators, this version can't be:  \verb+open+ 
-is used to build the following parsers, making this decidedly monadic.
+is used to build the following parsers, making this monadic.
 
 The \verb+define+ and \verb+lambda+ parsers are upgraded similarly:
 \begin{verbatim}
@@ -770,19 +778,19 @@ lambda =
 Note that \verb+commit+ isn't used until we can be sure that we're in the right 
 rule:  if, in the \verb+define+ parser, we committed to parsing the "define" 
 keyword, we wouldn't be able to backtrack and try the \verb+lambda+ parser if 
-that failed.  Thus, if treating errors as unrecoverable, it's important not to 
+that failed.  Thus, if errors are treated as unrecoverable, it's important not to 
 place a \verb+commit+ where backtracking might be necessary to parse a valid 
-alternative.  However, this isn't the case with how we've used it, since once 
+alternative.  However, in our example, once 
 we see an open curly brace and a define, we're sure that we're in the \verb+define+
-rule, and allowing backtracking would only destroy our ability to produce clean 
-and accurate error reports.
+rule, and allowing useless backtracking would only destroy our ability to report 
+errors cleanly and accurately.
 
 \subsection{Error messages:  finishing touches}
 To complete the error-reporting parser, we need to change a couple more details. 
 First, we want an error reported when an open curly brace is found, but no 
-special form can be reported.  To accomplish this, we can extend the \verb+special+ 
-parser with a third alternative, which results in an error if it can parse
-an open curly brace, but in a backtracking failure if not:
+special form can be parsed.  We extend the \verb+special+ 
+parser with a third alternative, which throws an error if it can parse
+an open curly brace:
 \begin{verbatim}
 special = define   <+> 
           lambda   <+> 
@@ -794,10 +802,11 @@ The \verb+form+ parser doesn't have to be changed:
 form = fmap ASymbol symbol <+> application <+> special
 \end{verbatim}
 
-When we can no longer parse any forms, instead of failing, we'd like to report an error if there's any input
-left, and otherwise succeed.  To implement this parser, we'll first munch any leading whitespace or comments, 
-as usual, and then we'll check the input:  if it's empty, great; if not, report an error at the location of the
-first remaining token, along with the appropriate error message that we defined earlier:
+When we can no longer parse any forms, instead of failing, we'd like to report 
+an error if there's any input left, and otherwise succeed.  Our ending parser
+must first munch any leading whitespace or comments, as usual, and then check 
+whether there are any tokens left.  If there are, it should report an error at 
+the location of the first remaining token:
 \begin{verbatim}
 endCheck = 
     many0 (whitespace <+> comment) *>
@@ -805,15 +814,13 @@ endCheck =
                         (t:_) -> throwError (ewUnp, t)
                         []    -> pure ()
 \end{verbatim}
-Now our \verb+woof+ parser uses this \verb+endCheck+ parser after it has consumed all the forms that it can:
+The \verb+woof+ parser uses \verb+endCheck+ after consuming all possible forms:
 \begin{verbatim}
 woof = many0 form <* endCheck
 \end{verbatim}
 
 \subsection{Error messages:  examples}
-While correct input will be parsed in the same way by our new parsers, incorrect input will now (hopefully) be
-accurately reported as such.  Successful results will be slightly different, however -- there is now an extra
-constructor wrapper around the value:
+While correct input is still parsed successfully:
 \begin{verbatim}
 *Main> let p = runParser woof . countLineCol
 
@@ -823,8 +830,9 @@ Right (Just ([ADefine "fgh" (ALambda ["f","x"]
                                            [ASymbol "x"]])],
        []))
 \end{verbatim}
-Here's the proof showing that the parser correctly reports all of the errors 
-covered by our spec:
+
+Incorrect input is reported as an error.  For each of the items in our error spec, 
+we can show that our parser correctly reports an error: 
 \begin{verbatim}
 *Main> p "()"
 Left ("application: missing operator",('(',1,1))
@@ -868,8 +876,8 @@ Left ("woof: unparsed input",(',',1,2))
 
 \section{Stack Order}
 Not only are the contents of a transformer stack important, but the order of the
-layers as well \cite{stack}.  Let's revisit our first woof parser -- what if our stack had
-instead been Maybe/State instead of State/Maybe?
+layers as well \cite{stack}.  Let's revisit our first woof parser -- what if our 
+stack had been Maybe/State instead of State/Maybe?
 \begin{verbatim}
 State/Maybe:   s -> Maybe (a, s)
 
@@ -913,10 +921,10 @@ don't match, as the example shows.
 On the other hand, the order of Error and Maybe relative to each other isn't 
 important.  But don't just take my word for it -- try it for yourself!
 
-Another important point to note is that our parsers didn't actually specify
-which order -- Maybe/State or State/Maybe -- they prefer, and in fact they will 
-work with either order.  Since our parsers don't specify the stack order, the 
-semantics are ultimately determined by the actual stack we use.
+Another important point to note is that our parsers don't specify
+which order -- Maybe/State or State/Maybe -- they prefer, and will 
+work with either.  This means that the semantics are ultimately determined by 
+the actual stack we use.
 
 
 
