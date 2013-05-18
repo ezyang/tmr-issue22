@@ -13,9 +13,9 @@
 
 \begin{introduction}
 Parsing is "the process of analysing a string of symbols according to the rules
-of a formal grammar" \cite{wikipedia_parsing}, with the general goal of building a tree
-representing the structure of the parsed input, upon which further operations
-such as interpretation or code generation are then performed.
+of a formal grammar" \cite{wikipedia_parsing}, with the general goal of building 
+a tree representing the structure of the parsed input, upon which further 
+operations such as interpretation or code generation are then performed.
 
 In addition to recognizing a stream of tokens and building a parse tree, a
 real-world parser must recognize faulty input, and accurately report the
@@ -62,20 +62,6 @@ This type definition says that a Parser is a function
 of a list of tokens, producing a new list of tokens and a result
 value, and possibly failing.
 
-\subsection{Parser-specific combinators}
-\begin{verbatim}
-item :: Parser t t
-item = Parser f
-  where 
-    f [] = Nothing
-    f (x:xs) = Just (xs, x)
-
-literal :: Eq t => t -> Parser t t
-literal x = afilter (== x) item
-\end{verbatim}
-Next is the \verb+item+ parser, the simplest parser we'll deal with.  All it does is 
-consume a single token if available, and fail otherwise.
-
 \subsection{Type class instances}
 For running parsers in sequence, we'll use the combinators from the Monad and
 Applicative type classes.  There's a little bit of book-keeping involved in the
@@ -100,18 +86,39 @@ instance Applicative (Parser t) where
   (<*>) = ap 
 \end{verbatim}
 
-For choosing between alternatives, the Alternative type class will do, so we 
-create an instance that is defined in terms of the Alternative instance of the
+We use the Alternative type class for expressing choice; the Parser instance is  
+is defined in terms of the Alternative instance of the
 underlying result type, \verb+Maybe+.
 \begin{verbatim}
 instance Alternative (Parser t) where
   empty = Parser (const empty)
   Parser l <|> Parser r = Parser (\ts -> l ts <|> r ts)
+\end{verbatim}
 
--- similar to mfilter, but for Alternative instead of MonadPlus
+\subsection{Parser-specific combinators}
+\verb+item+ is a very simple parser; it 
+consumes a single token if available, and fails otherwise:
+\begin{verbatim}
+item :: Parser t t
+item = Parser f
+  where 
+    f [] = Nothing
+    f (x:xs) = Just (xs, x)
+\end{verbatim}
+
+Analagous to \verb+mfilter+ is the \verb+check+ combinator, which is used to
+validate a parse result:
+\begin{verbatim}
 check :: (Monad f, Alternative f) => (a -> Bool) -> f a -> f a
 check p m =
     m >>= \x -> if p x then return x else empty
+\end{verbatim}
+
+Using \verb+check+, we can build a very convenient combinator to parse specific
+matching tokens: 
+\begin{verbatim}
+literal :: Eq t => t -> Parser t t
+literal x = check (== x) item
 \end{verbatim}
 
 \subsection{Examples}
