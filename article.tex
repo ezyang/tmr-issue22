@@ -33,21 +33,22 @@ to build a simple parser, and finally we'll add in error reporting.
 
 
 \section{Parser Combinators}
-Parser combinators are an excellent approach for building expressive parsers 
-that are easy to maintain.  In addition, they benefit from host-language
+Parser combinators are an excellent approach for building expressive, 
+declarative, and easy-to-maintain parsers.  They also benefit from host-language
 integration, allowing them to snarf features such as type systems and test 
 frameworks.
 
 There are many excellent papers on parser combinators, such
-as this \cite{wadler} classic Wadler paper on non-deterministic parser combinators, 
+as Wadler's classic paper \cite{wadler} on non-deterministic parser combinators, 
 Hutton's paper which covers factoring parsers into smaller pieces \cite{hutton}, 
 and Leijen's Parsec paper \cite{leijen}.  
 The inspiration and and much of the names used in this article are drawn 
 from those references.
 
-Let's make a quick pass through a minimal parser combinator library so that we
-can see them in action before we move on to the hard stuff.  There are three
-main pieces of the code:
+To get a feel for what parser combinators are and how they're used to build
+parsers, let's make a quick pass through a minimal parser combinator library 
+so that we can see them in action before we move on to the hard stuff.  We'll 
+divide the library into three main pieces of the code:
 \begin{itemize}
  \item a Parser datatype
  \item parser-specific combinators
@@ -169,6 +170,44 @@ Just ("acde",'b')
 
 *Main> getParser (literal 'a' <|> literal 'b') "cdeab"
 Nothing
+\end{verbatim}
+Finally, let's parse arbitrarily deeply nested parentheses.  This example 
+demonstrates the use of \verb+fmap+ to apply a function to a parse result, 
+\verb+check+ to make sure that \verb+char+ doesn't consume parentheses,
+\verb+literal+ to match specific tokens exactly, \verb+many+ to introduce
+repetition, \verb+<|>+ to express choice, and \verb+*>+ 
+and \verb+<*+ to sequence parsers:
+\begin{verbatim}
+data Nesting
+    = One Char
+    | Many [Nesting]
+  deriving (Show, Eq)
+  
+char :: Parser Char Nesting
+char = fmap One $ check (not . flip elem "()") item
+
+level :: Parser Char Nesting
+level = literal '(' *> (fmap Many $ many element) <* literal ')'
+
+element :: Parser Char Nesting
+element = char <|> level
+
+parseNest :: Parser Char [Nesting]
+parseNest = many element
+\end{verbatim}
+Examples:
+\begin{verbatim}
+*Main> getParser parseNest "(((()))))"
+Just (")",[Many [Many [Many [Many []]]]])
+
+*Main> getParser parseNest "(()abc(def)())zy"
+Just ("",[Many [Many [],One 'a',One 'b',One 'c',
+                Many [One 'd',One 'e',One 'f'],Many []],
+          One 'z',
+          One 'y'])
+
+*Main> getParser parseNest "(()abc(def)()"
+Just ("(()abc(def)()",[])
 \end{verbatim}
 In the rest of this article, we'll be reworking these basic parser combinators,
 by improving the implementations and extending the result types,
