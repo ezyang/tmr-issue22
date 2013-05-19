@@ -318,10 +318,9 @@ runParser = runStateT
 \end{verbatim}
 
 \subsection{Token parsers}
-Now let's get down to the business of building parsers, starting with parsers
-for our most basic syntactic elements:  tokens.
+Our first parsers are for the most basic syntactic elements:  tokens.
 These include the four braces, symbols, strings, numbers, whitespace, and comments.
-To recognize braces, we need to use the \verb+item+ and \verb+check+ 
+To recognize braces, we use the \verb+item+ and \verb+check+ 
 combinators to build a new combinator, \verb+satisfy+, that checks whether 
 the next character meets a condition:
 \begin{verbatim}
@@ -329,7 +328,9 @@ satisfy :: (MonadState [t] m, Alternative m) => (t -> Bool) -> m t
 satisfy = flip check item
 \end{verbatim}
 
-And here's the slightly modified \verb+literal+ combinator:
+Because we used MonadState's combinators to build \verb+item+, \verb+literal+ 
+has a slightly different type; we also take advantage of \verb+satisfy+ to 
+simplify its implementation:
 \begin{verbatim}
 literal :: (Eq t, MonadState [t] m, Alternative m) => t -> m t
 literal c = satisfy ((==) c)
@@ -358,8 +359,13 @@ Nothing
 Of course not -- we haven't told it how to skip comments and whitespace yet!
 Let's do that now, first by defining the whitespace and comment patterns, then
 by creating a \verb+munch+ combinator that takes in a parser, 
-throws away all leading junk, and finally runs the parser:
+throws away all leading junk, and finally runs the parser.  Also, we rename
+the \verb+some+ and \verb+many+ functions from Control.Alternative to more
+clearly indicate their semantics:
 \begin{verbatim}
+many0 = many
+many1 = some
+
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
 comment = pure (:) <*> literal ';' <*> many0 (not1 $ literal '\n')
 
@@ -410,7 +416,7 @@ not1 :: (MonadState [t] m, Alternative m, Switch m) => m a -> m t
 not1 p = switch p *> item
 \end{verbatim}
 
-With \verb+munch+ in hand, we can now fix \verb+opencurly+ and try it out:
+With \verb+munch+ in hand, we fix \verb+opencurly+ and try it out:
 \begin{verbatim}
 opencurly = munch $ literal '{'
 
@@ -427,9 +433,10 @@ Nothing
 Nothing
 \end{verbatim}
 
-Excellent!  Now the \verb+opencurly+ parser correctly throws away whitespace 
+Excellent!  The \verb+opencurly+ parser correctly throws away whitespace 
 and comments and succeeds, consuming one character, when the first non-junk 
 character is an open curly brace, failing otherwise.
+
 It's straightforward to define parsers for the other three brace tokens:
 \begin{verbatim}
 closecurly = munch $ literal '}'
@@ -437,9 +444,10 @@ openparen  = munch $ literal '('
 closeparen = munch $ literal ')'
 \end{verbatim}
 
-The parser for our last token, Symbol, is slightly more complicated because it allows
-multiple characters and multiple lengths.  We'll use the satisfy combinator along with 
-a function that checks whether a character is one of the legal symbol characters:
+The parser for our last token, Symbol, is more complicated because any number of
+alphabetical characters is valid.  We'll use \verb+satisfy+ and an appropriate
+predicate to check that a character is valid, and \verb+many1+ to 
+match any positive number of valid characters:
 \begin{verbatim}
 symbol = munch $ many1 char
   where char = satisfy (flip elem (['a' .. 'z'] ++ ['A' .. 'Z']))
@@ -454,13 +462,13 @@ Just ("abc","123")
 Nothing
 \end{verbatim}
 
-Note the use of \verb+many1+ to introduce repetition,
-and we're again using \verb+munch+ to throw away leading junk.
+Note that we're again using \verb+munch+ to throw away leading junk.
 
 \subsection{Syntactic structures}
 Whereas our token parsers dealt with the syntactic primitives of the Woof grammar, 
-the remaining parsers will have to implement grammar rules that combine the tokens
+the remaining parsers will implement grammar rules that combine the tokens
 into syntactic structures.
+
 The first combining form is function application.  The rule says that it's delimited
 by matching parentheses, in between which must appear one form as the operator, followed
 by any number of forms as the arguments to which the operator is applied.  We can
@@ -518,7 +526,7 @@ If the symbols are distinct, the parameter list subparser will succeed,
 whereas if there's a repeated symbol, it will fail.
 
 \subsection{Finishing touches}
-All we have still to do is to define the \verb+special+, \verb+form+ (which 
+All we have left to do are the \verb+special+, \verb+form+ (which 
 we've already used to build the previous parsers), and \verb+woof+ parsers.  
 The special parser is simple -- it parses either define or lambda:
 \begin{verbatim}
