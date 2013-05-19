@@ -108,7 +108,7 @@ item = Parser f
     f (x:xs) = Just (xs, x)
 \end{verbatim}
 
-Analagous to \verb+mfilter+ is the \verb+check+ combinator, which is used to
+Analagous to \verb+Control.Monad.mfilter+ is the \verb+check+ combinator, which is used to
 validate a parse result:
 \begin{verbatim}
 check :: (Monad f, Alternative f) => (a -> Bool) -> f a -> f a
@@ -209,35 +209,36 @@ Just ("",[Many [Many [],One 'a',One 'b',One 'c',
 *Main> getParser parseNest "(()abc(def)()"
 Just ("(()abc(def)()",[])
 \end{verbatim}
-In the rest of this article, we'll be reworking these basic parser combinators,
-by improving the implementations and extending the result types,
-all while taking advantage of monad transformers to keep it modular.
+In the rest of this article, we'll rework and augment these basic parser 
+combinators by genericizing the implementations and extending the result types,
+while taking advantage of monad transformers to keep them modular.
 
 
 
 
 \section{Monad transformers}
 Monad transformers \cite{liang} allow monads to be modularly combined to form 
-new, more complicated monads; the combined monads support all the operations of
-their constituents.  Doing just that -- combining multiple monads into a stack --
-we can build semantically rich yet modular parsers.
-We'll try to use the standard transformers/mtl \cite{mtl} libraries as much as possible, 
-since they're easy to obtain, easy to use, and quite effective in practice, but
-occasionally we'll have to make a slight modification or extensions.
+new, combined monads which support operations of each of their constituents.  
+There are several useful monads for parsing, and by applying monad transformers, 
+we can build semantically rich parsers without sacrificing modularity.
+We'll use the standard transformers/mtl \cite{mtl} libraries -- 
+they're easy to get, easy to use, and very useful.
 
 First, note that the parser type we used earlier -- \verb+[t] -> Maybe ([t], a)+
 -- can be built out of the StateT monad transformer applied to Maybe.  We can 
 now define the new parser type as:
 \begin{verbatim}
+import Control.Monad.State       (StateT(..))
+
 type Parser t a = StateT [t] Maybe a
 \end{verbatim}
 
-We can build the \verb+item+ parser using the combinators from MonadState --
+The \verb+item+ parser is reimplemented using the combinators from MonadState --
 token lists are the 'state' that \verb+item+ must inspect and modify:
 \begin{verbatim}
 {-# LANGUAGE   FlexibleContexts  #-}
 
-import Control.Monad.State       (MonadState (..), StateT(..))
+import Control.Monad.State       (MonadState (..))
 
 item :: (MonadState [t] m, Alternative m) => m t
 item =
@@ -245,8 +246,8 @@ item =
                         (t:ts) -> put ts *> pure t;
                         []     -> empty;
 \end{verbatim}
-Note that we needed to use the FlexibleContexts language extension for the 
-MonadState constraints in the type signatures.  This formulation of monad
+Note that the FlexibleContexts language extension is required by the 
+MonadState constraint in the type signature.  This formulation of monad
 transformers relies heavily on extensions to the type system, more of which 
 we'll have to use for some of the later code in this article.
 
