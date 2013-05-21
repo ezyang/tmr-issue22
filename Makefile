@@ -1,7 +1,7 @@
 issue = Issue22
 
 #lhssources = 
-texsources = Editorial.tex gadt.tex
+texsources = Editorial.tex gadt.tex article.tex
 
 default: $(issue).pdf
 
@@ -21,6 +21,7 @@ clean:
 # put .bib files here
 bib :
 	bibtex gadt
+	bibtex article
 
 final : $(issue).pdf bib
 	pdflatex $(issue).tex
