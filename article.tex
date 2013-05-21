@@ -1,0 +1,1021 @@
+% -*- LaTeX -*-
+\documentclass{tmr}
+
+\usepackage{mflogo}
+
+%include polycode.fmt
+
+\title{Error Reporting Parsers:  a Monad Transformer Approach}
+\author{Matt Fenwick\email{mfenwick100@gmail.com}}
+\author{Jay Vyas\email{jayunit100@gmail.com}}
+
+\begin{document}
+
+
+\begin{introduction}
+Parsing is "the process of analysing a string of symbols according to the rules
+of a formal grammar" \cite{wikipedia_parsing}, with the general goal of building 
+a tree representing the structure of the parsed input, upon which further 
+operations such as interpretation or code generation are then performed.
+
+In addition to recognizing a stream of tokens and building a parse tree, a
+real-world parser must recognize faulty input, and accurately report the
+location and cause of the problem.  But how -- what generates a parse error,
+what information is included in the error, how do error-reporting parsers
+compose?
+
+Monad transformers provide a clean and simple answer to these questions.
+We'll use them to build a parser combinator library, then we'll use the library
+to build a simple parser, and finally we'll add in error reporting.
+\end{introduction}
+
+
+
+
+\section{Parser Combinators}
+Parser combinators are an excellent approach for building expressive, 
+declarative, and easy-to-maintain parsers.  They also benefit from host-language
+integration, allowing them to snarf features such as type systems and test 
+frameworks.
+
+There are many excellent papers on parser combinators, such
+as Wadler's classic paper \cite{wadler} on non-deterministic parser combinators, 
+Hutton's paper which covers factoring parsers into smaller pieces \cite{hutton}, 
+and Leijen's Parsec paper \cite{leijen}.  
+The inspiration and and much of the names used in this article are drawn 
+from those references.
+
+To get a feel for what parser combinators are and how they're used to build
+parsers, let's make a quick pass through a minimal parser combinator library 
+so that we can see them in action before we move on to the hard stuff.  We'll 
+divide the library into three main pieces of the code:
+\begin{itemize}
+ \item a Parser datatype
+ \item parser-specific combinators
+ \item type class instances
+\end{itemize}
+
+\subsection{Parser datatype}
+\begin{verbatim}
+newtype Parser t a = 
+    Parser {getParser :: [t] -> Maybe ([t], a)}
+\end{verbatim}
+This type definition says that a Parser is a function
+of a list of tokens, producing a new list of tokens and a result
+value, and possibly failing.
+
+\subsection{Type class instances}
+For running parsers in sequence, we'll use the combinators from the Monad and
+Applicative type classes.  There's a little bit of book-keeping involved in the
+Monad instance -- it has to make sure that the correct token list is used by
+each parser -- but once we have a Monad instance, the Applicative and Functor
+instances can be handled by imports \verb+ap+ and \verb+liftM+ from Control.Monad.
+\begin{verbatim}
+import Control.Applicative  (Applicative(..), Alternative(..))
+import Control.Monad        (liftM, ap)
+
+instance Monad (Parser t) where
+  return x = Parser (\ts -> Just (ts, x))
+  Parser p >>= f = Parser (\ts ->
+                             p ts >>= \(ts', x) ->
+                             getParser (f x) ts')
+
+instance Functor (Parser t) where
+  fmap = liftM
+  
+instance Applicative (Parser t) where
+  pure = return
+  (<*>) = ap 
+\end{verbatim}
+
+We use the Alternative type class for expressing choice; the Parser instance is  
+is defined in terms of the Alternative instance of the
+underlying result type, \verb+Maybe+.
+\begin{verbatim}
+instance Alternative (Parser t) where
+  empty = Parser (const empty)
+  Parser l <|> Parser r = Parser (\ts -> l ts <|> r ts)
+\end{verbatim}
+
+\subsection{Parser-specific combinators}
+\verb+item+ is a very simple parser; it 
+consumes a single token if available, and fails otherwise:
+\begin{verbatim}
+item :: Parser t t
+item = Parser f
+  where 
+    f [] = Nothing
+    f (x:xs) = Just (xs, x)
+\end{verbatim}
+
+Analagous to \verb+Control.Monad.mfilter+ is the \verb+check+ combinator, which is used to
+validate a parse result:
+\begin{verbatim}
+check :: (Monad f, Alternative f) => (a -> Bool) -> f a -> f a
+check p m =
+    m >>= \x -> if p x then return x else empty
+\end{verbatim}
+
+Using \verb+check+, we can build a very convenient combinator to parse specific
+matching tokens: 
+\begin{verbatim}
+literal :: Eq t => t -> Parser t t
+literal x = check (== x) item
+\end{verbatim}
+
+\subsection{Examples}
+Now for some examples:  first, let's see \verb+item+ in action.  It fails on empty lists,
+and succeeds consuming one token otherwise:
+\begin{verbatim}
+*Main> getParser item ""
+Nothing
+
+*Main> getParser item "abcde"
+Just ("bcde",'a')
+\end{verbatim}
+
+We can run parsers in sequence using the Applicative combinators.  First one parser
+is run, then the second, and the token position is threaded between the two.
+Note that both parsers must succeed in order for the combined parser to succeed:
+\begin{verbatim}
+*Main> getParser (item *> item) "abcde"
+Just ("cde",'b')
+
+*Main> getParser (fmap (,) item <*> item) "abcde"
+Just ("cde",('a','b'))
+
+*Main> getParser (item *> item) "a"
+Nothing
+\end{verbatim}
+
+Parsers built out of \verb+literal+ only succeed when the next token matches 
+the given one:
+\begin{verbatim}
+*Main> getParser (literal 'a') "abcde"
+Just ("bcde",'a')
+
+*Main> getParser (literal 'a') "bcde"
+Nothing
+\end{verbatim}
+
+Using the Alternative combinators, we can create parsers that succeed if any of
+their sub-parsers succeed.  This is what allows parsers to backtrack, trying
+various alternatives if one fails:
+\begin{verbatim}
+*Main> getParser (literal 'a' <|> literal 'b') "abcde"
+Just ("bcde",'a')
+
+*Main> getParser (literal 'a' <|> literal 'b') "bacde"
+Just ("acde",'b')
+
+*Main> getParser (literal 'a' <|> literal 'b') "cdeab"
+Nothing
+\end{verbatim}
+Finally, let's parse arbitrarily deeply nested parentheses.  This example 
+demonstrates the use of \verb+fmap+ to apply a function to a parse result, 
+\verb+check+ to make sure that \verb+char+ doesn't consume parentheses,
+\verb+literal+ to match specific tokens exactly, \verb+many+ to introduce
+repetition, \verb+<|>+ to express choice, and \verb+*>+ 
+and \verb+<*+ to sequence parsers:
+\begin{verbatim}
+data Nesting
+    = One Char
+    | Many [Nesting]
+  deriving (Show, Eq)
+  
+char :: Parser Char Nesting
+char = fmap One $ check (not . flip elem "()") item
+
+level :: Parser Char Nesting
+level = literal '(' *> (fmap Many $ many element) <* literal ')'
+
+element :: Parser Char Nesting
+element = char <|> level
+
+parseNest :: Parser Char [Nesting]
+parseNest = many element
+\end{verbatim}
+Examples:
+\begin{verbatim}
+*Main> getParser parseNest "(((()))))"
+Just (")",[Many [Many [Many [Many []]]]])
+
+*Main> getParser parseNest "(()abc(def)())zy"
+Just ("",[Many [Many [],One 'a',One 'b',One 'c',
+                Many [One 'd',One 'e',One 'f'],Many []],
+          One 'z',
+          One 'y'])
+
+*Main> getParser parseNest "(()abc(def)()"
+Just ("(()abc(def)()",[])
+\end{verbatim}
+In the rest of this article, we'll rework and augment these basic parser 
+combinators by genericizing the implementations and extending the result types,
+while taking advantage of monad transformers to keep them modular.
+
+
+
+
+\section{Monad transformers}
+Monad transformers \cite{liang} allow monads to be modularly combined to form 
+new, combined monads which support operations of each of their constituents.  
+There are several useful monads for parsing, and by applying monad transformers, 
+we can build semantically rich parsers without sacrificing modularity.
+We'll use the standard transformers/mtl \cite{mtl} libraries -- 
+they're easy to get, easy to use, and very useful.
+
+First, note that the parser type we used earlier -- \verb+[t] -> Maybe ([t], a)+
+-- can be built out of the StateT monad transformer applied to Maybe.  We can 
+now define the new parser type as:
+\begin{verbatim}
+import Control.Monad.State       (StateT(..))
+
+type Parser t a = StateT [t] Maybe a
+\end{verbatim}
+
+The \verb+item+ parser is reimplemented using the combinators from MonadState --
+token lists are the 'state' that \verb+item+ must inspect and modify:
+\begin{verbatim}
+{-# LANGUAGE   FlexibleContexts  #-}
+
+import Control.Monad.State       (MonadState (..))
+
+item :: (MonadState [t] m, Alternative m) => m t
+item =
+    get >>= \xs -> case xs of
+                        (t:ts) -> put ts *> pure t;
+                        []     -> empty;
+\end{verbatim}
+Note that the FlexibleContexts language extension is required by the 
+MonadState constraint in the type signature.  This formulation of monad
+transformers relies heavily on extensions to the type system, more of which 
+we'll have to use for some of the later code in this article.
+
+
+
+
+\section{Introducing Woof:  a Simple Lisp}
+The simple language we'll use as a motivation for building parsers is Woof, a 
+simple dialect of Lisp.  We'll be progressively adding features to a simple 
+initial implementation on our way to creating an error-reporting parser.
+
+The language definition in pseudo-BNF \cite{bnf} is:
+
+\begin{verbatim}
+Woof         :=   Form(+)
+
+Form         :=   Symbol  |  Special  |  Application
+
+Symbol       :=   [a-zA-Z](+)
+
+Special      :=   '{'  ( Define  |  Lambda )  '}'
+
+Define       :=   'define'  Symbol  Form
+
+Lambda       :=   'lambda'  '{'  Symbol(*)  '}'  Form(+)
+
+Application  :=   '('  Form(+)  ')'
+
+Whitespace   :=   \s+
+
+Comment      :=   ';'  (not '\n')(*)
+\end{verbatim}
+
+With the additional rule that whitespace and comments may appear in any 
+amount before any token.  Tokens are:
+\begin{itemize}
+  \item \verb+{+
+  \item \verb+}+
+  \item \verb+(+
+  \item \verb+)+
+  \item \verb+Symbol+
+\end{itemize}
+
+
+
+
+\section{Example 1: Recognition and Tree-Building}
+
+\subsection{Preliminaries}
+Our first Woof parser will be responsible for: 1) determining whether input
+text conforms to the language definition, and 2) building an 
+Abstract Syntax Tree representing the structure of the parsed input.
+Here's the AST definition we'll use:
+\begin{verbatim}
+data AST
+    = ASymbol String
+    | ALambda [String] [AST]
+    | ADefine String AST
+    | AApp    AST  [AST]
+  deriving (Show, Eq)
+\end{verbatim}
+
+We'll also want a function for running our parsers, using the type given in the
+prevous section:
+\begin{verbatim}
+runParser :: Parser [t] a -> [t] -> Maybe (a, [t])
+runParser = runStateT
+\end{verbatim}
+
+\subsection{Token parsers}
+Our first parsers are for the most basic syntactic elements:  tokens.
+These include the four braces, symbols, strings, numbers, whitespace, and comments.
+To recognize braces, we use the \verb+item+ and \verb+check+ 
+combinators to build a new combinator, \verb+satisfy+, that checks whether 
+the next character meets a condition:
+\begin{verbatim}
+satisfy :: (MonadState [t] m, Alternative m) => (t -> Bool) -> m t
+satisfy = flip check item
+\end{verbatim}
+
+Because we used MonadState's combinators to build \verb+item+, \verb+literal+ 
+has a slightly different type; we also take advantage of \verb+satisfy+ to 
+simplify its implementation:
+\begin{verbatim}
+literal :: (Eq t, MonadState [t] m, Alternative m) => t -> m t
+literal c = satisfy ((==) c)
+\end{verbatim}
+
+Now we're ready to build parsers for the four bracket tokens.  
+First, a simple bracket parser:
+\begin{verbatim}
+opencurly = literal '{'
+\end{verbatim}
+
+And some examples to make sure it's behaving correctly:
+\begin{verbatim}
+*Main> map (runParser  opencurly) ["{abc", "}abc", "(abc", "abc"]
+[Just ('{', "abc"), Nothing, Nothing, Nothing]
+\end{verbatim}
+
+Good, it correctly accepts open curly brackets and rejects everything else.
+But what about the spec that said that comments and whitespace can occur 
+before any token -- will our parser be able to handle that?
+\begin{verbatim}
+*Main> map (runParser  opencurly) ["}abc", "(abc", "abc"]
+Nothing
+\end{verbatim}
+
+Of course not -- we haven't told it how to skip comments and whitespace yet!
+Let's do that now, first by defining the whitespace and comment patterns, then
+by creating a \verb+munch+ combinator that takes in a parser, 
+throws away all leading junk, and finally runs the parser.  Also, we rename
+the \verb+some+ and \verb+many+ functions from Control.Alternative to more
+clearly indicate their semantics:
+\begin{verbatim}
+many0 = many
+many1 = some
+
+whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
+comment = pure (:) <*> literal ';' <*> many0 (not1 $ literal '\n')
+
+munch p = many0 (whitespace <+> comment) *> p
+\end{verbatim}
+
+Here are these three parsers in action:
+\begin{verbatim}
+*Main> runParser whitespace "\n \t   \tabc"
+Just ("\n \t   \t","abc")
+
+*Main> runParser whitespace "abc"
+Nothing
+
+*Main> runParser comment ";123  \t\nabc"
+Just (";123  \t","\nabc")
+
+*Main> runParser (munch $ literal 'a') "abc"
+Just ('a',"bc")
+
+*Main> runParser (munch $ literal 'a') ";comment!\n   abc"
+Just ('a',"bc")
+
+*Main> runParser (munch $ literal 'a') ";comment!\n   bca"
+Nothing
+
+*Main> runParser (munch $ literal 'a') "bca"
+Nothing
+\end{verbatim}
+
+The comment parser uses a new combinator, \verb+not1+, built out of a 
+type class, Switch, modeling computations which can be switched from
+successful to failing and vice versa:
+\begin{verbatim}
+class Switch f where
+  switch :: f a -> f ()
+
+instance Switch Maybe where
+  switch (Just _) = Nothing
+  switch Nothing  = Just ()
+
+instance (Functor m, Switch m) => Switch (StateT s m) where
+  switch (StateT f) = StateT g
+    where 
+      g s = fmap (const ((), s)) . switch $ f s
+
+not1 :: (MonadState [t] m, Alternative m, Switch m) => m a -> m t
+not1 p = switch p *> item
+\end{verbatim}
+
+With \verb+munch+ in hand, we fix \verb+opencurly+ and try it out:
+\begin{verbatim}
+opencurly = munch $ literal '{'
+
+*Main> runParser opencurly ";abc\n{def"
+Just ('{', "def")
+
+*Main> runParser opencurly "{def"
+Just ('{', "def")
+
+*Main> runParser opencurly "(def"
+Nothing
+
+*Main> runParser opencurly "}def"
+Nothing
+\end{verbatim}
+
+Excellent!  The \verb+opencurly+ parser correctly throws away whitespace 
+and comments and succeeds, consuming one character, when the first non-junk 
+character is an open curly brace, failing otherwise.
+
+It's straightforward to define parsers for the other three brace tokens:
+\begin{verbatim}
+closecurly = munch $ literal '}'
+openparen  = munch $ literal '('
+closeparen = munch $ literal ')'
+\end{verbatim}
+
+The parser for our last token, Symbol, is more complicated because any number of
+alphabetical characters is valid.  We'll use \verb+satisfy+ and an appropriate
+predicate to check that a character is valid, and \verb+many1+ to 
+match any positive number of valid characters:
+\begin{verbatim}
+symbol = munch $ many1 char
+  where char = satisfy (flip elem (['a' .. 'z'] ++ ['A' .. 'Z']))
+
+*Main> runParser symbol "abc123"
+Just ("abc","123")
+
+*Main> runParser symbol ";sdfasdfsa\n  abc123"
+Just ("abc","123")
+
+*Main> runParser symbol ";sdfasdfsa\n  123abc"
+Nothing
+\end{verbatim}
+
+Note that we're again using \verb+munch+ to throw away leading junk.
+
+\subsection{Syntactic structures}
+Whereas our token parsers dealt with the syntactic primitives of the Woof grammar, 
+the remaining parsers will implement grammar rules that combine the tokens
+into syntactic structures.
+
+The first combining form is function application.  The rule says that it's delimited
+by matching parentheses, in between which must appear one form as the operator, followed
+by any number of forms as the arguments to which the operator is applied.  We can
+say that like so:
+\begin{verbatim}
+application =
+    openparen    *>
+    pure AApp   <*>
+    form        <*>
+    many0 form  <*
+    closeparen
+\end{verbatim}
+
+Note that all the parser sequencing is done using Applicative
+combinators -- we don't need to use the monadic ones.  Also, we used \verb+pure+ 
+to inject a value -- the function \verb+AApp+ -- into the parser.  \verb+pure+ 
+has no effect on the tokens and always succeeds:
+\begin{verbatim}
+*Main> runParser (pure 3) ""
+Just (3,"")
+
+*Main> runParser (pure 3) "abc"
+Just (3,"abc")
+\end{verbatim}
+
+Next, we move on to \verb+define+.
+A straightforward translation from the grammar produces:
+\begin{verbatim}
+define =
+    opencurly                    *>
+    check (== "define") symbol   *>
+    pure ADefine                <*>
+    symbol                      <*>
+    form                        <*
+    closecurly
+\end{verbatim}
+
+On to Lambda.  Not only does Lambda have additional syntax with its parameter 
+list, but we also need to ensure that the parameter names are unique.  We can 
+do that using the \verb+check+ combinator again:
+\begin{verbatim}
+lambda = 
+    opencurly                       *>
+    check (== "lambda") symbol      *>
+    opencurly                       *>
+    pure ALambda                   <*>
+    check distinct (many0 symbol)  <*>
+    (closecurly                     *>
+     many1 form                    <*
+     closecurly)
+  where
+    distinct names = length names == length (nub names)
+\end{verbatim}
+If the symbols are distinct, the parameter list subparser will succeed,
+whereas if there's a repeated symbol, it will fail.
+
+\subsection{Finishing touches}
+All we have left to do are the \verb+special+, \verb+form+ (which 
+we've already used to build the previous parsers), and \verb+woof+ parsers.  
+The special parser is simple -- it parses either define or lambda:
+\begin{verbatim}
+special = define <+> lambda
+\end{verbatim}
+
+A form is either a symbol, application, or a special form.  We could just write:
+\begin{verbatim}
+form = symbol <+> application <+> special
+\end{verbatim}
+
+except that the types don't match -- \verb+symbol+'s type parameter is a String, 
+whereas the other two have ASTs.  We fix that by mapping the \verb+ASymbol+ 
+function over \verb+symbol+:
+\begin{verbatim}
+form = fmap ASymbol symbol <+> application <+> special
+\end{verbatim}
+
+The final parser, \verb+woof+, needs to not only parse all the forms, but also 
+make sure that the entire input is consumed.  The end of input check is done 
+with the \verb+end+ parser:
+\begin{verbatim}
+end = switch item
+\end{verbatim}
+
+We also need to munch any trailing comments and whitespace -- otherwise \verb+end+
+would fail -- so the final woof parser is:
+\begin{verbatim}
+woof = many1 form <* munch end
+\end{verbatim}
+
+\subsection{Examples}
+Let's look at a few examples of our parser in action:
+\begin{verbatim}
+*Main> runParser woof "; \n   {lambda {x y z} a b (c b a)}end"
+Just ([ALambda ["x","y","z"] 
+               [ASymbol "a",
+                ASymbol "b",
+                AApp (ASymbol "c") 
+                     [ASymbol "b",
+                      ASymbol "a"]],
+       ASymbol "end"],
+      "")
+
+*Main> runParser woof "a b c {define q (f x)}"
+Just ([ASymbol "a",
+       ASymbol "b",
+       ASymbol "c",
+       ADefine "q" (AApp (ASymbol "f") [ASymbol "x"])],"")
+
+*Main> runParser woof "a b c {define q (f x)},"
+Nothing
+\end{verbatim}
+Note that the first two parses consume the entire input, while the last one 
+fails because it doesn't recognize the trailing comma.
+
+
+
+
+\section{Example 2: error-reporting}
+While our first parser worked great on valid input, it wasn't helpful
+when the input was malformed.  When the parser finds bad input, we'd like it to 
+produce an informative error, indicating what and where the problem was.  
+This allows a user to quickly find and correct problems.
+
+Let's start with an informal spec of different cases of malformed input, along 
+with the error messages that should be reported: 
+\begin{itemize}
+  \item application: missing operator:  \begin{verbatim}()\end{verbatim}
+  \item application: missing close parenthesis:  \begin{verbatim}(a b\end{verbatim}
+  \item define: missing symbol:  \begin{verbatim}{define (a b c)}\end{verbatim}
+  \item define: missing form:  \begin{verbatim}{define a}\end{verbatim}
+  \item define: missing close curly:  \begin{verbatim}{define a b\end{verbatim}
+  \item lambda: missing parameter list:  \begin{verbatim}{lambda (a b c)}\end{verbatim}
+  \item lambda: duplicate parameter names:  \begin{verbatim}{lambda {a b a} (c d)}\end{verbatim}
+  \item lambda: missing parameter list close curly:  \begin{verbatim}{lambda {a b (c d)}\end{verbatim}
+  \item lambda: missing body form:  \begin{verbatim}{lambda {a b}}\end{verbatim}
+  \item lambda: missing close curly:  \begin{verbatim}{lambda {a b} (c d)\end{verbatim}
+  \item special form: unable to parse:  \begin{verbatim}{defin x y}\end{verbatim}
+  \item woof: unparsed input:  \begin{verbatim}a,b\end{verbatim}
+\end{itemize}
+To allow error reporting in our parsers, we first need to extend our monad stack, 
+adding in a layer for errors.  We'll use a second monad transformer type class 
+-- MonadError, replace the Maybe layer with its corresponding transformer datatype 
+MaybeT, and add in an Either layer on the bottom of the stack.  Our parser stack 
+and \verb+runParser+ function are now:
+\begin{verbatim}
+type Parse e t a = StateT [t] (MaybeT (Either e)) a
+
+runParser :: Parse e t a -> [t] -> Either e (Maybe (a, [t]))
+runParser p xs = runMaybeT (runStateT p xs)
+\end{verbatim}
+
+While our previous parsers had two different results -- Nothing and Just ... --
+our new parsers have three possible results:  success, failure, and error.  Note
+that successful and failing parses are wrapped in an additional \verb+Right+
+constructor:
+\begin{verbatim}
+*Main> runParser item "abc"
+Right (Just ('a',"bc"))
+
+*Main> runParser item ""
+Right Nothing
+
+*Main> runParser (throwError "oops!") ""
+Left "oops!"
+\end{verbatim}
+
+Although the \verb+<|>+ combinator can recover from failures, it can't recover from
+errors.  Compare:
+\begin{verbatim}
+*Main> runParser (satisfy (== 'a') <|> satisfy (== 'b')) "babc"
+Right (Just ('b',"abc"))
+
+*Main> runParser (throwError "no!" <|> satisfy (== 'b')) "babc"
+Left "no!"
+\end{verbatim}
+We'll take advantage of this backtracking restriction to produce accurate error
+messages.
+
+\subsection{Type Class Preliminaries}
+Unfortunately, the standard MonadError instance for the \verb+Either+ datatype does
+not fit our needs -- it requires an \verb+Error+ constraint that we do not want.
+We'll implement our own MonadError type class, based on the
+standard one, and instances of it.  We'll need an instance for each member of
+our stack -- Either, StateT, and MaybeT: 
+\begin{verbatim}
+class Monad m => MonadError e m | m -> e where
+  throwError :: e -> m a
+  catchError :: m a -> (e -> m a) -> m a
+
+instance MonadError e (Either e) where
+  throwError               =  Left
+  catchError  (Right x) _  =  Right x
+  catchError  (Left e)  f  =  f e
+  
+instance MonadError e m => MonadError e (StateT s m) where
+  throwError      =  lift . throwError
+  catchError m f  =  StateT g
+    where
+      g s = catchError (runStateT m s) 
+                       (\e -> runStateT (f e) s)
+
+instance MonadError e m => MonadError e (MaybeT m) where
+  throwError      =  lift . throwError
+  catchError m f  =  MaybeT $ catchError (runMaybeT m) 
+                                         (runMaybeT . f)
+\end{verbatim}
+Note how the StateT and MaybeT instances don't really do anything with the
+errors; they just pass the error on through to the next level.  That's why they
+both require that the next lower level supports MonadError.  Also, this code 
+requires some additional extensions:
+\begin{itemize}
+  \item FlexibleInstances
+  \item FunctionalDependencies
+  \item UndecidableInstances 
+\end{itemize}
+
+We'll also need an instance of Switch for MaybeT:
+\begin{verbatim}
+instance Functor m => Switch (MaybeT m) where
+  switch (MaybeT m) = MaybeT (fmap switch m)
+\end{verbatim}
+
+\subsection{Reporting position}
+To report error positionr, we'll pre-process the input
+string to calculate the line and column number of each character.  Then instead 
+of our parsers operating on a list of characters, they'll operate on a list of 
+Tokens, where a Token is a character tupled up with a line number and column 
+number, which we'll express with a simple typedef and some accessor functions:
+\begin{verbatim}
+type Token = (Char, Int, Int)
+chr  (a, _, _)  =  a
+line (_, b, _)  =  b
+col  (_, _, c)  =  c
+\end{verbatim}
+The function responsible for calculating the position will simply transform a 
+list of characters into a list of tokens:
+\begin{verbatim}
+countLineCol :: [Char] -> [Token]
+countLineCol = reverse . snd . foldl f ((1, 1), [])
+  where
+    f ((line, col), ts) '\n' = ((line + 1, 1), ('\n', line, col):ts)
+    f ((line, col), ts)  c   = ((line, col + 1), (c, line, col):ts)
+\end{verbatim}
+
+\subsection{Token parsers}
+By adding the position to the input, we've created a new problem 
+for ourselves: our original token parsers operated on 
+character lists, but we now need them to work on token lists.  
+The cause of the problem is the \verb+literal+ combinator, so we
+replace it with a similar one for token lists:
+\begin{verbatim}
+character :: (MonadState [Token] m, 
+              Alternative m) => Char -> m Token
+character c = satisfy ((==) c . chr)
+\end{verbatim}
+
+And now our token parsers are:
+\begin{verbatim}
+whitespace = many1 $ satisfy (flip elem " \n\t\r\f" . chr)
+comment = pure (:) <*> character ';' <*> many0 chars
+  where chars = not1 $ character '\n'
+
+munch p = many0 (whitespace <+> comment) *> p
+
+ocurly = munch $ character '{'
+ccurly = munch $ character '}'
+oparen = munch $ character '('
+cparen = munch $ character ')'
+symbol = munch $ many1 char
+  where char = fmap chr $ satisfy (f . chr)
+        f = flip elem (['a' .. 'z'] ++ ['A' .. 'Z'])
+\end{verbatim}
+
+The only differences were the replacement of \verb+literal+ with \verb+character+ 
+and a couple uses of the \verb+chr+ accessor.  The \verb+munch+ combinator didn't 
+have to change at all (although its inferred type did in fact change).
+
+\subsection{Error messages}
+Now we modify the remaining parsers to report accurate and useful errors.
+Here are the error messages that we'll use to report each error:
+\begin{verbatim}
+eAppOper    =  "application: missing operator"
+eAppClose   =  "application: missing close parenthesis"
+eDefSym     =  "define: missing symbol"
+eDefForm    =  "define: missing form"
+eDefClose   =  "define: missing close curly"
+eLamParam   =  "lambda: missing parameter list"
+eLamDupe    =  "lambda: duplicate parameter names"
+eLamPClose  =  "lambda: missing parameter list close curly"
+eLamBody    =  "lambda: missing body form"
+eLamClose   =  "lambda: missing close curly"
+eSpecial    =  "special form: unable to parse"
+eWoof       =  "woof: unparsed input"
+\end{verbatim}
+
+The MonadError type class provides two useful combinators, \verb+throwError+ for 
+generating errors, and \verb+catchError+ for dealing with them.  We can ignore 
+the second because we don't need to recover from errors, just report them, 
+but when should an error be generated and what 
+data should it include?  \verb+throwError+ is too basic for our needs, so we'll 
+introduce the \verb+commit+ combinator:
+\begin{verbatim}
+commit :: (MonadError e m, Alternative m) => e -> m a -> m a
+commit err p = p <|> throwError err
+\end{verbatim}
+
+This combinator takes two arguments: 1. an error value, and 2. a monadic 
+computation.  It first tries to run the computation, and if the computation 
+fails, generates an error whose contents are the first argument.  The 
+definition of 'failure' is provided by the Alternative instance of \verb+m+.
+
+What data do we want to include in our errors?  A String describing the error 
+and a token reporting the position will describe the error decently:
+\begin{verbatim}
+type Error = (String, Token)
+\end{verbatim}
+
+Now let's start with \verb+application+ as our first modified, error-reporting 
+parser:
+\begin{verbatim}
+application =
+    openparen                             >>= \open ->
+    commit (eAppOper, open) form          >>= \op ->
+    many0 form                            >>= \args ->
+    commit (eAppClose, open) closeparen   >>
+    return (AApp op args)
+\end{verbatim}
+This parser works by running the open-parenthesis parser, capturing its value 
+in \verb+open+, and continuing with the parsing; if either \verb+form+ or 
+close-parenthesis fails, an appropriate error is generated with a message and 
+the location of the open parenthesis.  However, if the open 
+parenthesis is not successfully parsed, it's a failure but not an error.  
+Examples:
+\begin{verbatim}
+*Main> runParser application (countLineCol "oops")
+Right Nothing
+
+*Main> runParser application (countLineCol "(a b c)")
+Right (Just (AApp (ASymbol "a") [ASymbol "b",ASymbol "c"],[]))
+
+*Main> runParser application (countLineCol "\n()")
+Left ("application: missing operator",('(',2,1))
+
+*Main> runParser application (countLineCol "(a b")
+Left ("application: missing close parenthesis",('(',1,1))
+\end{verbatim}
+
+Although the previous version of the \verb+application+ parser was implemented 
+with just applicative combinators, this version can't be:  \verb+open+ 
+is used to build the following parsers, making this monadic.
+
+The \verb+define+ and \verb+lambda+ parsers are upgraded similarly:
+\begin{verbatim}
+define =
+    opencurly                            >>= \open ->
+    check (== "define") symbol            *>
+    pure ADefine                         <*>
+    commit (eDefSym, open) symbol        <*>
+    commit (eDefForm, open) form         <*
+    commit (eDefClose, open) closecurly  
+
+lambda =
+    opencurly                                >>= \open ->
+    check (== "lambda") symbol               >>
+    commit (eLamParam, open) opencurly       >>= \p_open ->
+    many0 symbol                             >>= \params ->
+    (if distinct params 
+        then return ()
+        else throwError (eLamDupe, p_open))  >>
+    commit (eLamPClose, p_open) closecurly   >>
+    commit (eLamBody, open) (many1 form)     >>= \bodies ->
+    commit (eLamClose, open) closecurly      >>
+    return (ALambda params bodies)
+  where
+    distinct names = length names == length (nub names)
+\end{verbatim}
+
+Note that \verb+commit+ isn't used until we can be sure that we're in the right 
+rule:  if, in the \verb+define+ parser, we committed to parsing the "define" 
+keyword, we wouldn't be able to backtrack and try the \verb+lambda+ parser if 
+that failed.  Thus, if errors are treated as unrecoverable, it's important not to 
+place a \verb+commit+ where backtracking might be necessary to parse a valid 
+alternative.  However, in our example, once 
+we see an open curly brace and a define, we're sure that we're in the \verb+define+
+rule, and allowing useless backtracking would only destroy our ability to report 
+errors cleanly and accurately.
+
+\subsection{Error messages:  finishing touches}
+To complete the error-reporting parser, we need to change a couple more details. 
+First, we want an error reported when an open curly brace is found, but no 
+special form can be parsed.  We extend the \verb+special+ 
+parser with a third alternative, which throws an error if it can parse
+an open curly brace:
+\begin{verbatim}
+special = define   <+> 
+          lambda   <+> 
+          (ocurly >>= \o -> throwError (esName, o))
+\end{verbatim}
+
+The \verb+form+ parser doesn't have to be changed:
+\begin{verbatim}
+form = fmap ASymbol symbol <+> application <+> special
+\end{verbatim}
+
+When we can no longer parse any forms, instead of failing, we'd like to report 
+an error if there's any input left, and otherwise succeed.  Our ending parser
+must first munch any leading whitespace or comments, as usual, and then check 
+whether there are any tokens left.  If there are, it should report an error at 
+the location of the first remaining token:
+\begin{verbatim}
+endCheck = 
+    many0 (whitespace <+> comment) *>
+    get >>= \xs -> case xs of
+                        (t:_) -> throwError (ewUnp, t)
+                        []    -> pure ()
+\end{verbatim}
+The \verb+woof+ parser uses \verb+endCheck+ after consuming all possible forms:
+\begin{verbatim}
+woof = many0 form <* endCheck
+\end{verbatim}
+
+\subsection{Error messages:  examples}
+While correct input is still parsed successfully:
+\begin{verbatim}
+*Main> let p = runParser woof . countLineCol
+
+*Main> p "{define fgh {lambda {f x} (f x)}}"
+Right (Just ([ADefine "fgh" (ALambda ["f","x"] 
+                                     [AApp (ASymbol "f") 
+                                           [ASymbol "x"]])],
+       []))
+\end{verbatim}
+
+Incorrect input is reported as an error.  For each of the items in our error spec, 
+we can show that our parser correctly reports an error: 
+\begin{verbatim}
+*Main> p "()"
+Left ("application: missing operator",('(',1,1))
+
+*Main> p "(a b"
+Left ("application: missing close parenthesis",('(',1,1))
+
+*Main> p "{define (a b c)}"
+Left ("define: missing symbol",('{',1,1))
+
+*Main> p "{define a}"
+Left ("define: missing form",('{',1,1))
+
+*Main> p "{define a b"
+Left ("define: missing close curly",('{',1,1))
+
+*Main> p "{lambda (a b c)}"
+Left ("lambda: missing parameter list",('{',1,1))
+
+*Main> p "{lambda {a b a} (a b c)}"
+Left ("lambda: duplicate parameter names",('{',1,9))
+
+*Main> p "{lambda {a b (c d)}"
+Left ("lambda: missing parameter list close curly",('{',1,9))
+
+*Main> p "{lambda {a b}}"
+Left ("lambda: missing body form",('{',1,1))
+
+*Main> p "{lambda {a b} (c d)"
+Left ("lambda: missing close curly",('{',1,1))
+
+*Main> p "{defin x y}"
+Left ("special form: unable to parse",('{',1,1))
+
+*Main> p "a,b"
+Left ("woof: unparsed input",(',',1,2))
+\end{verbatim}
+
+
+
+
+\section{Stack Order}
+Not only are the contents of a transformer stack important, but the order of the
+layers as well \cite{stack}.  Let's revisit our first woof parser -- what if our 
+stack had been Maybe/State instead of State/Maybe?
+\begin{verbatim}
+State/Maybe:   s -> Maybe (a, s)
+
+Maybe/State:   s -> (Maybe a, s)
+\end{verbatim}
+
+given:
+\begin{verbatim}
+import Control.Monad.Trans.Maybe (MaybeT(..))
+import Data.Functor.Identity     (Identity(..))
+
+type Parser' t a = MaybeT (StateT [t] Identity) a
+
+runParser' :: Parser' t a -> [t] -> (Maybe a, [t])
+runParser' p xs = runIdentity $ runStateT (runMaybeT p) xs
+\end{verbatim}
+
+We can compare it to the earlier parser:
+\begin{verbatim}
+*Main> runParser' (literal 'a') "aqrs"
+(Just 'a',"qrs")
+
+*Main> runParser' (literal 'a') "qrs"
+(Nothing,"rs")
+\end{verbatim}
+Whereas:
+\begin{verbatim}
+*Main> runParser (literal 'a') "qrs"
+Nothing
+
+*Main> runParser (literal 'a') "aqrs"
+Just ('a',"qrs")
+\end{verbatim}
+
+The difference is that Maybe/State always returns a modified state, regardless
+of the success of the computation, whereas State/Maybe only returns a modified
+state if the computation is successful.  This means that backtracking doesn't
+work right with Maybe/State -- tokens are consumed even when the parsers
+don't match, as the example shows.
+
+On the other hand, the order of Error and Maybe relative to each other isn't 
+important.  But don't just take my word for it -- try it for yourself!
+
+Another important point to note is that our parsers don't specify
+which order -- Maybe/State or State/Maybe -- they prefer, and will 
+work with either.  This means that the semantics are ultimately determined by 
+the actual stack we use.
+
+
+
+
+\section{Conclusion}
+Monad transformers provide an elegant solution to error reporting in parser
+combinators.  Better yet, they are extensible -- we could go back and add more
+features to our parsers using additional transformers, perhaps extending our
+parser to save partial results, so that if there's an error, it reports the
+progress that it had made before the error.  We could do that using a Writer
+transformer.  Or we check to make sure that all variables are in scope when
+they're used -- using a Reader transformer.  We could even capture whitespace
+and comment tokens, instead of just throwing them away, in case they contained
+valuable information.  And the best part of it is, most of the parsers we already
+wrote would continue to work fine without needing any modifications.  We'd just
+have to set up our transformer stack and modify the relevant parsers! 
+
+
+
+
+\bibliography{article}
+
+\end{document}
