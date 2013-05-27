@@ -15,6 +15,7 @@
 \begin{introduction}
 
 \EZY{I rewrote the abstract, let me know if you like it.}
+\Matt{LGTM, thanks!}
 
 The goal of parsing, in abstract, is to take a string and build a tree
 representing the structure of this input according to a formal grammar.
@@ -41,7 +42,7 @@ build continuity.}
 Parser combinators are an excellent approach for building expressive, 
 declarative, and easy-to-maintain parsers.  They also benefit from host-language
 integration, allowing them to snarf features such as type systems and test 
-frameworks.
+frameworks. 
 
 There are many excellent papers on parser combinators, such
 as Wadler's classic paper \cite{wadler} on non-deterministic parser combinators, 
@@ -240,8 +241,20 @@ We'll use the standard transformers/mtl \cite{mtl} libraries --
 they're easy to install, easy to use, and very useful.
 
 First, note that the parser type we used earlier -- \verb+[t] -> Maybe ([t], a)+
--- can be built out of the StateT monad transformer applied to Maybe.  \EZY{Do you maybe want to say why this is the case?}  We can 
-now define the new parser type as:
+-- can be built out of the StateT monad transformer applied to Maybe.
+\EZY{Do you maybe want to say why this is the case?}
+From the implementation:
+\begin{verbatim}
+newtype StateT s m a = StateT { runStateT :: s -> m (a,s) }
+\end{verbatim}
+Substituting in [s] for s and Maybe for m in the right-hand side produces
+(note that the type variable m is no longer needed):
+\begin{verbatim}
+newtype StateT s a = StateT { runStateT :: [s] -> Maybe (a,[s]) }
+\end{verbatim}
+Which is identical to the Parser type given before, except for the order 
+of the result tuple.
+This allows us to define the new parser type as:
 \begin{verbatim}
 import Control.Monad.State       (StateT(..))
 
@@ -262,7 +275,7 @@ item =
                         []     -> empty;
 \end{verbatim}
 Note that the FlexibleContexts language extension is required by the 
-MonadState constraint in the type signature.  This \EZY{which?} formulation of monad
+MonadState constraint in the type signature.  The mtl \EZY{which?} \Matt{I'm not sure what the library's called -- is it mtl or transformers?} formulation of monad
 transformers relies heavily on extensions to the type system, more of which 
 we'll have to use for some of the later code in this article.
 
@@ -372,6 +385,8 @@ by creating a \verb+munch+ combinator that takes in a parser,
 throws away all leading junk, and finally runs the parser.  Also, we rename
 the \verb+some+ and \verb+many+ functions from Control.Alternative to more
 clearly indicate their semantics: \EZY{I would suspect many compiler authors would be of the opinion that the proper way to remove comments and whitespace is to lex first, and parse later.}
+\Matt{That's a good point, I toyed with doing it that way but it was just too much trouble for no benefit that I could see.  It ended up being a lot more code.
+But this approach is equivalent, since the token parsers get the first crack at the input string, and the non-token parsers don't touch the input string directly.}
 \begin{verbatim}
 many0 = many
 many1 = some
@@ -631,8 +646,15 @@ runParser p xs = runMaybeT (runStateT p xs)
 \end{verbatim}
 
 While our previous parsers had two different results -- Nothing and Just --
-our new parsers have three possible results:  success, failure, and error. \EZY{Question a reader might have: what is the difference between failure and error?  You give a little guidance later but give some intuition now!}  Note
-that successful and failing parses are wrapped in an additional \verb+Right+
+our new parsers have three possible results:  success, failure, and error. 
+A parse failure means that a parser wasn't able to match the input, but
+nothing bad happened; failures can be recovered from if there is an alternative
+parse that succeeds.  However, an error means that an unrecoverable problem
+has been found and that parsing should immediately stop; the parser will
+not be able to recover, even if there are alternatives since backtracking
+will not be performed.
+\EZY{Question a reader might have: what is the difference between failure and error?  You give a little guidance later but give some intuition now!}
+Note that successful and failing parses are wrapped in an additional \verb+Right+
 constructor:
 \begin{verbatim}
 *Main> runParser item "abc"
@@ -710,6 +732,10 @@ number, which we'll express with a simple typedef and some accessor functions:
 \EZY{I don't think this is how most real parser libraries do it.  Why not do it
 with some extra state on the parser monad; it's yet another application of the
 transformer approach?}
+\Matt{Good point, I thought about doing it this way but decided not to because
+the article is already long and this would add a lot, and the other approach 
+seems to work fine and is simple.
+But I'm not opposed to it at all.  Do you think I should switch it?}
 \begin{verbatim}
 type Token = (Char, Int, Int)
 chr  (a, _, _)  =  a
@@ -796,6 +822,9 @@ fails, it generates an error.  The
 definition of 'failure' is provided by the Alternative instance of \verb+m+.
 \EZY{Give a little intuition on why the operator is called commit earlier;
 you don't get around it until later.}
+The reason for its name is that it restricts backtracking and alternatives;
+it ``commits" the parser to a do-or-die situation -- either it successfully
+parses the input, or the parsing stops.
 
 What data do we want to include in our errors?  A String describing the error 
 and a token reporting the position will do:
@@ -1010,6 +1039,9 @@ On the other hand, the order of Error and Maybe relative to each other isn't
 important.  But don't just take my word for it -- try it for yourself!
 \EZY{It's worth mentioning why, formally speaking, this is the case, which has
 to do with the relevant structures being isomorphic to each other.}
+\Matt{Uh-oh!  I don't really know anything formal about monad transformers,
+I really have no idea how to go about showing something like this!
+I guess I'll have to rethink my goals for this section.}
 
 Another important point to note is that our parsers don't specify
 which order -- Maybe/State or State/Maybe -- they prefer, and will 
