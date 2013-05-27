@@ -115,7 +115,7 @@ instance Alternative (Parser t) where
 
 \subsection{Parser-specific combinators}
 \verb+item+ is a very simple parser; it 
-consumes a single token if available, and fails otherwise:
+consumes a single token if available and fails otherwise:
 \begin{verbatim}
 item :: Parser t t
 item = Parser f
@@ -124,7 +124,7 @@ item = Parser f
     f (x:xs) = Just (xs, x)
 \end{verbatim}
 
-Analagous to \verb+Control.Monad.mfilter+ is the \verb+check+ combinator, which is used to
+The \verb+check+ combinator is analogous to \verb+Control.Monad.mfilter+, which is used to
 validate a parse result:
 \begin{verbatim}
 check :: (Monad f, Alternative f) => (a -> Bool) -> f a -> f a
@@ -165,7 +165,7 @@ Nothing
 \end{verbatim}
 
 Parsers built out of \verb+literal+ only succeed when the next token matches 
-the given one:
+the specified one:
 \begin{verbatim}
 *Main> getParser (literal 'a') "abcde"
 Just ("bcde",'a')
@@ -226,22 +226,21 @@ Just ("",[Many [Many [],One 'a',One 'b',One 'c',
 Just ("(()abc(def)()",[])
 \end{verbatim}
 In the rest of this article, we'll rework and augment these basic parser 
-combinators by genericizing the implementations and extending the result types,
+combinators by generalizing the implementations and extending the result types,
 while taking advantage of monad transformers to keep them modular.
 
 
 
 
 \section{Monad transformers}
-Monad transformers \cite{liang} allow monads to be modularly combined to form 
-new, combined monads which support operations of each of their constituents.  
-There are several useful monads for parsing, and by applying monad transformers, 
-we can build semantically rich parsers without sacrificing modularity.
+Monad transformers~\cite{liang} provide a method of combining monads into
+new monads which support operations of each of their constituents.  
+By applying monad transformers, we can build semantically rich parsers without sacrificing modularity.
 We'll use the standard transformers/mtl \cite{mtl} libraries -- 
-they're easy to get, easy to use, and very useful.
+they're easy to install, easy to use, and very useful.
 
 First, note that the parser type we used earlier -- \verb+[t] -> Maybe ([t], a)+
--- can be built out of the StateT monad transformer applied to Maybe.  We can 
+-- can be built out of the StateT monad transformer applied to Maybe.  \EZY{Do you maybe want to say why this is the case?}  We can 
 now define the new parser type as:
 \begin{verbatim}
 import Control.Monad.State       (StateT(..))
@@ -250,7 +249,7 @@ type Parser t a = StateT [t] Maybe a
 \end{verbatim}
 
 The \verb+item+ parser is reimplemented using the combinators from MonadState --
-token lists are the 'state' that \verb+item+ must inspect and modify:
+token lists are the `state' that \verb+item+ must inspect and modify:
 \begin{verbatim}
 {-# LANGUAGE   FlexibleContexts  #-}
 
@@ -263,7 +262,7 @@ item =
                         []     -> empty;
 \end{verbatim}
 Note that the FlexibleContexts language extension is required by the 
-MonadState constraint in the type signature.  This formulation of monad
+MonadState constraint in the type signature.  This \EZY{which?} formulation of monad
 transformers relies heavily on extensions to the type system, more of which 
 we'll have to use for some of the later code in this article.
 
@@ -271,6 +270,9 @@ we'll have to use for some of the later code in this article.
 
 
 \section{Introducing Woof:  a Simple Lisp}
+
+\EZY{An alternate structure you can use here is to introduce Woof first, before talking about monad transformers.  After all, the example parser doesn't require you to know what is going on in transformer-land.}
+
 The simple language we'll use as a motivation for building parsers is Woof, a 
 simple dialect of Lisp.  We'll be progressively adding features to a simple 
 initial implementation on our way to creating an error-reporting parser.
@@ -305,9 +307,9 @@ amount before any token.  Tokens are:
 \section{Example 1: Recognition and Tree-Building}
 
 \subsection{Preliminaries}
-Our first Woof parser will be responsible for: 1) determining whether input
-text conforms to the language definition, and 2) building an 
-Abstract Syntax Tree representing the structure of the parsed input.
+Our first Woof parser will be responsible for determining whether input
+text conforms to the language definition and building an 
+Abstract Syntax Tree (AST) representing the structure of the parsed input.
 Here's the AST definition we'll use:
 \begin{verbatim}
 data AST
@@ -350,7 +352,7 @@ First, a simple bracket parser:
 opencurly = literal '{'
 \end{verbatim}
 
-And some examples to make sure it's behaving correctly:
+And some examples to make sure it's behaving correctly: \EZY{An example?! Why not a QuickCheck property? \verb|;-)|}
 \begin{verbatim}
 *Main> map (runParser  opencurly) ["{abc", "}abc", "(abc", "abc"]
 [Just ('{', "abc"), Nothing, Nothing, Nothing]
@@ -369,7 +371,7 @@ Let's do that now, first by defining the whitespace and comment patterns, then
 by creating a \verb+munch+ combinator that takes in a parser, 
 throws away all leading junk, and finally runs the parser.  Also, we rename
 the \verb+some+ and \verb+many+ functions from Control.Alternative to more
-clearly indicate their semantics:
+clearly indicate their semantics: \EZY{I would suspect many compiler authors would be of the opinion that the proper way to remove comments and whitespace is to lex first, and parse later.}
 \begin{verbatim}
 many0 = many
 many1 = some
@@ -514,7 +516,7 @@ define =
     closecurly
 \end{verbatim}
 
-On to Lambda.  Not only does Lambda have additional syntax with its parameter 
+On to Lambda!  Not only does Lambda have additional syntax with its parameter 
 list, but we also need to ensure that the parameter names are unique.  We can 
 do that using the \verb+check+ combinator again:
 \begin{verbatim}
@@ -561,7 +563,7 @@ end = switch item
 \end{verbatim}
 
 We also need to munch any trailing comments and whitespace -- otherwise \verb+end+
-would fail -- so the final woof parser is:
+would fail -- so the final Woof parser is:
 \begin{verbatim}
 woof = many1 form <* munch end
 \end{verbatim}
@@ -628,8 +630,8 @@ runParser :: Parse e t a -> [t] -> Either e (Maybe (a, [t]))
 runParser p xs = runMaybeT (runStateT p xs)
 \end{verbatim}
 
-While our previous parsers had two different results -- Nothing and Just ... --
-our new parsers have three possible results:  success, failure, and error.  Note
+While our previous parsers had two different results -- Nothing and Just --
+our new parsers have three possible results:  success, failure, and error. \EZY{Question a reader might have: what is the difference between failure and error?  You give a little guidance later but give some intuition now!}  Note
 that successful and failing parses are wrapped in an additional \verb+Right+
 constructor:
 \begin{verbatim}
@@ -700,11 +702,14 @@ instance Functor m => Switch (MaybeT m) where
 \end{verbatim}
 
 \subsection{Reporting position}
-To report error positionr, we'll pre-process the input
-string to calculate the line and column number of each character.  Then instead 
+To report error position, we'll pre-process the input
+string to calculate the line and column number of each character.  Then, instead 
 of our parsers operating on a list of characters, they'll operate on a list of 
 Tokens, where a Token is a character tupled up with a line number and column 
 number, which we'll express with a simple typedef and some accessor functions:
+\EZY{I don't think this is how most real parser libraries do it.  Why not do it
+with some extra state on the parser monad; it's yet another application of the
+transformer approach?}
 \begin{verbatim}
 type Token = (Char, Int, Int)
 chr  (a, _, _)  =  a
@@ -722,6 +727,8 @@ countLineCol = reverse . snd . foldl f ((1, 1), [])
 \end{verbatim}
 
 \subsection{Token parsers}
+\EZY{In contrast, this section doesn't seem very enlightening, so maybe
+it could be glossed over or relegated to an appendix.}
 By adding the position to the input, we've created a new problem 
 for ourselves: our original token parsers operated on 
 character lists, but we now need them to work on token lists.  
@@ -733,7 +740,7 @@ character :: (MonadState [Token] m,
 character c = satisfy ((==) c . chr)
 \end{verbatim}
 
-And now our token parsers are:
+Now our token parsers are:
 \begin{verbatim}
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f" . chr)
 comment = pure (:) <*> character ';' <*> many0 chars
@@ -755,7 +762,7 @@ and a couple uses of the \verb+chr+ accessor.  The \verb+munch+ combinator didn'
 have to change at all (although its inferred type did in fact change).
 
 \subsection{Error messages}
-Now we modify the remaining parsers to report accurate and useful errors.
+Now, we modify the remaining parsers to report accurate and useful errors.
 Here are the error messages that we'll use to report each error:
 \begin{verbatim}
 eAppOper    =  "application: missing operator"
@@ -772,8 +779,8 @@ eSpecial    =  "special form: unable to parse"
 eWoof       =  "woof: unparsed input"
 \end{verbatim}
 
-The MonadError type class provides two useful combinators, \verb+throwError+ for 
-generating errors, and \verb+catchError+ for dealing with them.  We can ignore 
+The MonadError type class provides two useful combinators: \verb+throwError+ for 
+generating errors and \verb+catchError+ for dealing with them.  We can ignore 
 the second because we don't need to recover from errors, just report them, 
 but when should an error be generated and what 
 data should it include?  \verb+throwError+ is too basic for our needs, so we'll 
@@ -783,13 +790,15 @@ commit :: (MonadError e m, Alternative m) => e -> m a -> m a
 commit err p = p <|> throwError err
 \end{verbatim}
 
-This combinator takes two arguments: 1. an error value, and 2. a monadic 
-computation.  It first tries to run the computation, and if the computation 
-fails, generates an error whose contents are the first argument.  The 
+This combinator takes two arguments: an error value and a monadic 
+computation.  It first tries to run the computation; if the computation 
+fails, it generates an error.  The 
 definition of 'failure' is provided by the Alternative instance of \verb+m+.
+\EZY{Give a little intuition on why the operator is called commit earlier;
+you don't get around it until later.}
 
 What data do we want to include in our errors?  A String describing the error 
-and a token reporting the position will describe the error decently:
+and a token reporting the position will do:
 \begin{verbatim}
 type Error = (String, Token)
 \end{verbatim}
@@ -855,13 +864,13 @@ lambda =
 \end{verbatim}
 
 Note that \verb+commit+ isn't used until we can be sure that we're in the right 
-rule:  if, in the \verb+define+ parser, we committed to parsing the "define" 
+rule: \EZY{Here it is}  if, in the \verb+define+ parser, we committed to parsing the ``define" 
 keyword, we wouldn't be able to backtrack and try the \verb+lambda+ parser if 
 that failed.  Thus, if errors are treated as unrecoverable, it's important not to 
 place a \verb+commit+ where backtracking might be necessary to parse a valid 
-alternative.  However, in our example, once 
+alternative.  In our example, however, once 
 we see an open curly brace and a define, we're sure that we're in the \verb+define+
-rule, and allowing useless backtracking would only destroy our ability to report 
+rule; allowing useless backtracking would only destroy our ability to report 
 errors cleanly and accurately.
 
 \subsection{Error messages:  finishing touches}
@@ -910,7 +919,7 @@ Right (Just ([ADefine "fgh" (ALambda ["f","x"]
        []))
 \end{verbatim}
 
-Incorrect input is reported as an error.  For each of the items in our error spec, 
+Incorrect input results in an error.  For each of the items in our error spec, 
 we can show that our parser correctly reports an error: 
 \begin{verbatim}
 *Main> p "()"
@@ -951,11 +960,11 @@ Left ("woof: unparsed input",(',',1,2))
 \end{verbatim}
 
 
-
+\Red{It's worth noting that up until this point, we haven't talked about how transformers contribute to the design of the parser library.  Maybe give the juicy bits earlier.}
 
 \section{Stack Order}
-Not only are the contents of a transformer stack important, but the order of the
-layers as well \cite{stack}.  Let's revisit our first woof parser -- what if our 
+While the contents of a transformer stack is important, the order of the
+layers is important as well~\cite{stack}.  Let's revisit our first Woof parser -- what if our 
 stack had been Maybe/State instead of State/Maybe?
 \begin{verbatim}
 State/Maybe:   s -> Maybe (a, s)
@@ -999,11 +1008,13 @@ don't match, as the example shows.
 
 On the other hand, the order of Error and Maybe relative to each other isn't 
 important.  But don't just take my word for it -- try it for yourself!
+\EZY{It's worth mentioning why, formally speaking, this is the case, which has
+to do with the relevant structures being isomorphic to each other.}
 
 Another important point to note is that our parsers don't specify
 which order -- Maybe/State or State/Maybe -- they prefer, and will 
 work with either.  This means that the semantics are ultimately determined by 
-the actual stack we use.
+the actual monad stack we use.
 
 
 
@@ -1018,8 +1029,8 @@ transformer.  Or we check to make sure that all variables are in scope when
 they're used -- using a Reader transformer.  We could even capture whitespace
 and comment tokens, instead of just throwing them away, in case they contained
 valuable information.  And the best part of it is, most of the parsers we already
-wrote would continue to work fine without needing any modifications.  We'd just
-have to set up our transformer stack and modify the relevant parsers! 
+wrote would continue to work fine without needing any modifications.  That
+is the power of monad transformers!
 
 
 
