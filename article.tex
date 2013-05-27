@@ -824,7 +824,8 @@ definition of 'failure' is provided by the Alternative instance of \verb+m+.
 you don't get around it until later.}
 The reason for its name is that it restricts backtracking and alternatives;
 it ``commits" the parser to a do-or-die situation -- either it successfully
-parses the input, or the parsing stops.
+parses the input, or the parsing stops.  It's based on the \verb+nofail+
+combinator of \cite{hutton1992higher}.
 
 What data do we want to include in our errors?  A String describing the error 
 and a token reporting the position will do:
