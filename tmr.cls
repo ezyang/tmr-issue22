@@ -20,6 +20,9 @@
 \newif\ifcomplete
 \newif\iftikz
 
+\newcommand{\Red}[1]{{\color{red} #1}}
+\newcommand{\EZY}[1]{\Red{EZY: #1}}
+
 \DeclareOption{complete}{\completetrue}
 \DeclareOption{secheadings}{\AtBeginDocument{\setcounter{tocdepth}{1}}}
 \DeclareOption{tikz}{\tikztrue}

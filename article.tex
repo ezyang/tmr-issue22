@@ -13,26 +13,31 @@
 
 
 \begin{introduction}
-Parsing is ``the process of analysing a string of symbols according to the rules
-of a formal grammar" \cite{wikipedia_parsing}, with the general goal of building 
-a tree representing the structure of the parsed input, upon which further 
-operations such as interpretation or code generation are then performed.
 
-In addition to recognizing a stream of tokens and building a parse tree, a
-real-world parser must recognize faulty input, and accurately report the
-location and cause of the problem.  But how -- what generates a parse error,
-what information is included in the error, how do error-reporting parsers
-compose?
+\EZY{I rewrote the abstract, let me know if you like it.}
+
+The goal of parsing, in abstract, is to take a string and build a tree
+representing the structure of this input according to a formal grammar.
+However, real-world parsers must also recognize faulty input and
+accurately report the location and cause of the problem.  What generates
+a parse error, how is that information included in the error, and how do
+error-reporting parsers compose?
 
 Monad transformers provide a clean and simple answer to these questions.
-We'll use them to build a parser combinator library, then we'll use the library
-to build a simple parser, and finally we'll add in error reporting.
+We'll show how monad transformers can be used to build a parser combinator
+and then add error reporting in later in a modular way.
+
 \end{introduction}
 
 
 
 
 \section{Parser Combinators}
+
+\EZY{It's probably worth rephrasing what is stated in the abstract here,
+for those of us who are in the habit of skipping abstracts; it also helps
+build continuity.}
+
 Parser combinators are an excellent approach for building expressive, 
 declarative, and easy-to-maintain parsers.  They also benefit from host-language
 integration, allowing them to snarf features such as type systems and test 
@@ -41,14 +46,15 @@ frameworks.
 There are many excellent papers on parser combinators, such
 as Wadler's classic paper \cite{wadler} on non-deterministic parser combinators, 
 Hutton's paper which covers factoring parsers into smaller pieces \cite{hutton}, 
-and Leijen's Parsec paper \cite{leijen}.  
-The inspiration and and much of the names used in this article are drawn 
+and Leijen's Parsec paper \cite{leijen}.
+The inspiration and many of the names used in this article are drawn 
 from those references.
 
-To get a feel for what parser combinators are and how they're used to build
-parsers, let's make a quick pass through a minimal parser combinator library 
-so that we can see them in action before we move on to the hard stuff.  We'll 
-divide the library into three main pieces of the code:
+To get a feel for what parser combinators are and how they're used to
+build parsers, we'll quickly create a minimal parser combinator library to see
+the basic principles of their design before adding monad transformers to
+the mix.  We'll divide the library into three main pieces of the code:
+
 \begin{itemize}
  \item a Parser datatype
  \item parser-specific combinators
@@ -56,13 +62,21 @@ divide the library into three main pieces of the code:
 \end{itemize}
 
 \subsection{Parser datatype}
+\EZY{These sections are very terse.  If the reader is expected to already be familiar with
+most of the moving bits of a parsing library, perhaps this section can be boiled down some more.
+It is a very curious audience the current presentation targets: a reader who knows how to
+implement a parser library ``from scratch'', but doesn't know how to use
+monad transformers to build them.  Perhaps the components of this
+presentation which are key to understanding how the monad transformer works should be
+fleshed out more.}
+
 \begin{verbatim}
 newtype Parser t a = 
     Parser {getParser :: [t] -> Maybe ([t], a)}
 \end{verbatim}
-This type definition says that a Parser is a function
-of a list of tokens, producing a new list of tokens and a result
-value, and possibly failing.
+This type definition defines Parser to be a function
+on a list of tokens, producing a new list of tokens and a result
+value, possibly failing.
 
 \subsection{Type class instances}
 For running parsers in sequence, we'll use the combinators from the Monad and
@@ -70,6 +84,8 @@ Applicative type classes.  There's a little bit of book-keeping involved in the
 Monad instance -- it has to make sure that the correct token list is used by
 each parser -- but once we have a Monad instance, the Applicative and Functor
 instances can be handled by imports \verb+ap+ and \verb+liftM+ from Control.Monad.
+\EZY{Fun fact: it is possible to create parsers which only have an applicative instance,
+and are more efficient but less expressive than the style you have here!}
 \begin{verbatim}
 import Control.Applicative  (Applicative(..), Alternative(..))
 import Control.Monad        (liftM, ap)
@@ -82,13 +98,13 @@ instance Monad (Parser t) where
 
 instance Functor (Parser t) where
   fmap = liftM
-  
+
 instance Applicative (Parser t) where
   pure = return
-  (<*>) = ap 
+  (<*>) = ap
 \end{verbatim}
 
-We use the Alternative type class for expressing choice; the Parser instance is  
+We use the Alternative type class for expressing choice; the Parser instance is
 is defined in terms of the Alternative instance of the
 underlying result type, \verb+Maybe+.
 \begin{verbatim}
@@ -263,21 +279,13 @@ The language definition in pseudo-BNF \cite{bnf} is:
 
 \begin{verbatim}
 Woof         :=   Form(+)
-
 Form         :=   Symbol  |  Special  |  Application
-
 Symbol       :=   [a-zA-Z](+)
-
 Special      :=   '{'  ( Define  |  Lambda )  '}'
-
 Define       :=   'define'  Symbol  Form
-
 Lambda       :=   'lambda'  '{'  Symbol(*)  '}'  Form(+)
-
 Application  :=   '('  Form(+)  ')'
-
 Whitespace   :=   \s+
-
 Comment      :=   ';'  (not '\n')(*)
 \end{verbatim}
 
