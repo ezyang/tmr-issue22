@@ -23,9 +23,7 @@ Generalized algebraic data types (GADTs) are a feature of functional programming
 
 \section{Introduction}
 
-The usage of type systems is recognized as the most popular and best established lightweight formal method for ensuring that software behaves correctly~\cite{pierce_book}. It is used for detecting program errors, for documentation, to enforce abstraction and in other cases. The study of type systems is an active research area and Haskell is considered to be a kind of laboratory in which type-system extensions are designed, implemented and applied~\cite{haskell_history}.
-
-This article is a tutorial about one such extension -- generalized algebraic data types (GADTs). The single idea of GADTs is to allow specific return types of value constructors. \EZY{I think this explanation doesn't mean anything to someone who doesn't already know what GADTs are.} In this way they generalize ordinary algebraic data types. The theoretical foundation for GADTs is the notion of dependent types which is extensively described in literature on computer science and logic~\cite{pierce_book}.
+The usage of type systems is recognized as the most popular and best established lightweight formal method for ensuring that software behaves correctly~\cite{pierce_book}. It is used for detecting program errors, for documentation, to enforce abstraction and in other cases. The study of type systems is an active research area and Haskell is considered to be a kind of laboratory in which type-system extensions are designed, implemented and applied~\cite{haskell_history}. This article is a tutorial about one such extension -- generalized algebraic data types (GADTs). The theoretical foundation for GADTs is the notion of dependent types which is extensively described in literature on computer science and logic~\cite{pierce_book}.
 
 GADTs are very useful in practice. Several examples of GADTs usage are described in this article. But these examples are not new. They were taken from many resources~\cite{fun_with_phantom_types,replib,singletons,okasaki_red_black_trees,weirich_dependently_typed,finally_tagless,yampa_gadts} and many examples are already a part of Haskell folklore.
 
@@ -108,8 +106,7 @@ ghci> :t TI 10
 TI 10 :: Test Int
 \end{Verbatim}
 
-\EZY{I think I'd add something like, ``While creating a values with the TI results in a value of type Test Int, the converse holds too: when a pattern-match succeeds on the TI constructor, we can now conclude that a is Int; that is to say, pattern matching causes type refinement.''}
-The key feature of GADTs is that pattern matching causes type refinement. In the right-hand side of the following equation the type of \verb|a| is refined to \verb|Int|:
+While creating a values with the \verb|TI| results in a value of type \verb|Test Int|, the converse holds too: when a pattern-match succeeds on the \verb|TI| constructor in the example below, we can now conclude that the type of \verb|a| is \verb|Int|. That is to say, pattern matching causes type refinement, which is the key feature of GADTs.
 
 \begin{Verbatim}
 f :: Test a -> a
@@ -591,8 +588,6 @@ concatenate Nil ys = ys
 concatenate (Cons x xs) ys = Cons x (concatenate xs ys)
 \end{Verbatim}
 
-% TODO describe other ways to implement Plus?
-
 As mentioned previously, \verb|Succ| has a type parameter of kind \verb|*|, so it possible to write nonsensical terms like \verb|Succ Int| which will be accepted by the type checker. This problem can be addressed using a new \italic{kind}. Just as types classify values, kinds classify types. We can declare the following data type:
 
 \begin{Verbatim}
@@ -637,7 +632,7 @@ repeatElem a 0 = Nil
 repeatElem a n = Cons a (repeatElem a (n-1))
 \end{Verbatim}
 
-On the one hand, the count parameter must be passed as a value to populate the list at run-time. On the other hand, we need a type-level representation of the same number for \verb|List| type. Haskell enforces a phase separation between run-time values and compile-time types \EZY{so there is a problem. Please state what the problem is.}.
+On the one hand, the count parameter must be passed as a value to populate the list at run-time. On the other hand, we need a type-level representation of the same number for \verb|List| type. Haskell enforces a phase separation between run-time values and compile-time types. This causes a problem with type signature of function \verb|repeatElem|: we can not specify type-level representation of list elements count in the return value type of the function matching the count passed as a value.
 
 The solution to this puzzle is the use of \italic{singleton types}. Singleton types are types that contain only one value (except, of course, the $\bot$ value, which is a member of every type in Haskell).
 
@@ -695,16 +690,14 @@ nthElem (Cons _ xs) (SuccSing n) = nthElem xs n
 
 The tilde operation is an \italic{equality constraint}. It asserts that two types are the same in the context. Thus, is it only possible to use this function when the index does not exceed the list length.
 
-\EZY{Yes, please write a conclusion here!}
-
-%The moral is that to verify a function it is required to carefully design data type.
+We have shown that GADTs provide a way to use Haskell type checker to verify correctness of list operations. To do this, we need to specify necessary properties in the data type. The set of such properties is motivated by the operations that we want to implement. At first we only made a distinction between empty and non-empty lists. This was suitable for the \verb|listHead| function. To implement \verb|repeatElem|, \verb|concatenate| and other functions we extended the list data type with the count of elements that it contains.
 
 \section{Proving Correctness of Red-Black Tree Insert Operation}
 \label{sec:red_black}
 
-A red-black tree is a binary search tree where every node has either red or black color. We use the implementation described by Okasaki~\cite{okasaki_red_black_trees}. The source code for the verified red-black tree was originally written by Stephanie Weirich~\cite{weirich_dependently_typed} for a university course.
+This section describes another, more involved example of using GADTs to verify correctness of programs: proving correctness of insertion in red-black trees. A red-black tree is a binary search tree where every node has either red or black color and which additionally satisfies several invariants which we describe later. The presense of invariants guarantees that the tree is balanced and thus searching takes $O (\log n)$ time (where $n$ is total number of elements). The insertion operation must maintain these properties, so it is interesting to see how GADTs can be used to enforse these invariants.
 
-\EZY{Before you dive into all of the hoary details of the construction, it is well worth motivating the example. What's the point? Answer this question!}
+We use the implementation of red-black trees described by Okasaki~\cite{okasaki_red_black_trees}. The source code for the verified red-black tree was originally written by Stephanie Weirich~\cite{weirich_dependently_typed} for a university course.
 
 \begin{Verbatim}
 data Color = R | B
@@ -727,14 +720,12 @@ Additionally red-black tree satisfies the following invariants:
 
 \begin{longenum}
 \item The root is black.
-\item Every leaf is black. % (this is enforced by the tree data type).
+\item Every leaf is black.
 \item Red nodes have black children.
 \item For each node, all paths from that node to the leaf node contain the same number of black nodes. This number of black nodes is called the \italic{black height} of a node.
 \end{longenum}
 
-% excluding current node?
-
-These invariants guarantee that tree is balanced. Indeed, the longest path from the root node (containing alternating red-black nodes) can only be twice as long as the shortest path (containing only red nodes). Thus basic operations (such as insertion) take $O(\log n)$ time in the worst case.
+These invariants guarantee that tree is balanced. Indeed, the longest path from the root node (containing alternating red-black nodes) can only be twice as long as the shortest path (containing only red nodes). Thus basic operations (such as insertion and search) take $O(\log n)$ time in the worst case.
 
 Insertion operation for red-black trees has the following structure:
 
@@ -948,21 +939,19 @@ Note that the case of one regular node and one leaf node is not valid, because t
 
 Complete source code is in Appendix C.
 
-The previous code illustrates a general problem with proofs. In fact, in Haskell $\bot$ (bottom) is a member of every type. As a result, we can write:
+We have shown that insertion operation maintains all invariants in red-black trees by adding necessary properties to the tree data type and then modifying the functions accordingly. However, the previous code illustrates a general problem with proofs. In fact, in Haskell $\bot$ (bottom) is a member of every type. As a result, we can write:
 
 \begin{Verbatim}
 concatenate :: List a m -> List a n -> List a (Plus m n)
 concatenate = undefined
 \end{Verbatim}
 
-Of course, the implementation of the \verb|concatenate| function does not meet our expectations. But this code still type checks.
-
-\EZY{Conclusion???}
+This code type checks, but, of course, the implementation of the \verb|concatenate| function does not meet our expectations.
 
 \section{Type Signatures for Functions Involving GADTs}
 \label{sec:type_signatures}
 
-\EZY{This section is something of a digression from the litany of examples that have been parading down this article; so it's probably worth pointing it out and mentioning why this is an important thing to know about.}
+Type inference for programs with GADTs is out of scope for this article. But when writing programs we are faced with the problem: typically Haskell functions do not require writing type signatures, but many functions involving GADTs do not compile without specifying type signatures explicitly, because Haskell compiler can not automatically infer the type. This section describes the reasons of this situation.
 
 Hindley-Milner (HM) is the classic type inference method~\cite{cardelli_typechecking}. One of the most important properties of HM is ability to always deduce the \italic{most general type} (\italic{principle type}) of every term.
 
@@ -1001,7 +990,7 @@ The paper by Schrijvers et al.~\cite{type_inference_gadts} provides more informa
 \section{Usage of GADTs in Yampa}
 \label{sec:yampa}
 
-Yampa~\cite{yampa} is a domain-specific language for functional reactive programming (FRP). FRP is a programming paradigm which involves expressing data flows using the building blocks of functional programming. \EZY{What are the building blocks of functional programming?} Based on the information from the paper by Nilsson~\cite{yampa_gadts}, this section describes how GADTs were used to improve performance of Yampa programs.
+Yampa~\cite{yampa} is a domain-specific language for functional reactive programming (FRP). FRP is a programming paradigm which involves expressing data flows using functional programming languages. Based on the information from the paper by Nilsson~\cite{yampa_gadts}, this section describes how GADTs were used to improve performance of Yampa programs.
 
 The signal function is a central abstraction in Yampa. It represents a simple synchronous process that maps an input signal to an output signal (see \prettyref{fig:signal_function}). The type of the signal function is \verb|SF a b| and it can be constructed from an ordinary function using the following function:
 
@@ -1150,7 +1139,31 @@ instance Expr Print where
 t' = printExpr $ isZero $ intVal 5
 \end{Verbatim}
 
-\EZY{What are the limitations of finally tagless in this context?}
+Detailed discussion of GADTless programming and comparing advantages of these approaches is out of scope of this paper. However, it is worth pointing out that it is much easier to do deep pattern matching with data types (including GADTs) than with class instances. For example, earlier we have used deep pattern matching in \verb|leftBalance| function:
+
+\begin{Verbatim}
+leftBalance :: Node a -> Node a
+leftBalance (N B (N R (N R a x b) y c) z d) =
+    N R (N B a x b) y (N B c z d)
+leftBalance (N B (N R a x (N R b y c)) z d) =
+    N R (N B a x b) y (N B c z d)
+leftBalance n = n
+\end{Verbatim}
+
+Another important aspect is that GADTs, just like all data types in Haskell, are closed: once they are declared, they can not be extended in the rest of the program. In contrast, type class instances are open. For example, we could split \verb|Expr e| type class into two separate type classes (this way we improve modularity):
+
+\begin{Verbatim}
+class ArithExpr e where
+    intVal  :: Int -> e Int
+    add     :: e Int -> e Int -> e Int
+    isZero  :: e Int -> e Bool
+
+class LogExpr e where
+    boolVal :: Bool -> e Bool
+    if'     :: e Bool -> e t -> e t -> e t
+    
+class (ArithExpr e, LogExpr e) => Expr e
+\end{Verbatim}
 
 \section{Conclusion}
 \label{sec:conclusion}
@@ -1163,12 +1176,6 @@ This article has demonstrated the use of GADTs in practice:
 \item GADTs can be used as a lightweight way to ensure program correctness. They allow to encode domain-specific invariants in data type. The programmer can decide which parts of her or his program require verification and add only relevant invariants. Haskell enforces a phase separation between run-time values and compile-time types. Invariants are expressed using types, so there is no additional run-time cost. But on the other hand, we have shown the issue with the $\bot$ value.
 \item We have also described how GADTs were used to improve performance of Yampa programs.
 \end{longitem}
-
-% Comparing to an approach to make verification by translating Haskell to other languages and back (such as xmonad), verification in Haskell itself...
-
-As a result, we have shown that the notion of GADTs is a very valuable extension of the Haskell language.
-
-\EZY{I think you can write a better concluding sentence then that!}
 
 \section*{Acknowledgments}
 
