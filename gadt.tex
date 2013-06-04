@@ -632,7 +632,7 @@ repeatElem a 0 = Nil
 repeatElem a n = Cons a (repeatElem a (n-1))
 \end{Verbatim}
 
-On the one hand, the count parameter must be passed as a value to populate the list at run-time. On the other hand, we need a type-level representation of the same number for \verb|List| type. Haskell enforces a phase separation between run-time values and compile-time types. This causes a problem with type signature of function \verb|repeatElem|: we can not specify type-level representation of list elements count in the return value type of the function matching the count passed as a value.
+On the one hand, the count parameter must be passed as a value to populate the list at run-time. On the other hand, we need a type-level representation of the same number for \verb|List| type. Haskell enforces a phase separation between run-time values and compile-time types. This causes a problem with the type signature of the function \verb|repeatElem|: there is no direct way to specify a type-level representation of list's count in the return value type of the function which will match the count passed in as a value.
 
 The solution to this puzzle is the use of \italic{singleton types}. Singleton types are types that contain only one value (except, of course, the $\bot$ value, which is a member of every type in Haskell).
 
@@ -939,7 +939,7 @@ Note that the case of one regular node and one leaf node is not valid, because t
 
 Complete source code is in Appendix C.
 
-We have shown that insertion operation maintains all invariants in red-black trees by adding necessary properties to the tree data type and then modifying the functions accordingly. However, the previous code illustrates a general problem with proofs. In fact, in Haskell $\bot$ (bottom) is a member of every type. As a result, we can write:
+\EZY{The new sentence you added here is really awkward} We have shown that the insertion operation maintains all invariants in red-black trees by adding necessary properties to the tree data type and then modifying the functions accordingly. However, the previous code illustrates a general problem with proofs. In fact, in Haskell $\bot$ (bottom) is a member of every type. As a result, we can write:
 
 \begin{Verbatim}
 concatenate :: List a m -> List a n -> List a (Plus m n)
@@ -951,7 +951,7 @@ This code type checks, but, of course, the implementation of the \verb|concatena
 \section{Type Signatures for Functions Involving GADTs}
 \label{sec:type_signatures}
 
-Type inference for programs with GADTs is out of scope for this article. But when writing programs we are faced with the problem: typically Haskell functions do not require writing type signatures, but many functions involving GADTs do not compile without specifying type signatures explicitly, because Haskell compiler can not automatically infer the type. This section describes the reasons of this situation.
+Type inference for programs with GADTs is out of scope for this article. But when writing programs we are faced with a problem: typically Haskell functions do not require writing type signatures, but many functions involving GADTs do not compile without specifying type signatures explicitly, as the Haskell compiler can not automatically infer the type. This section describes the reasons of this situation.
 
 Hindley-Milner (HM) is the classic type inference method~\cite{cardelli_typechecking}. One of the most important properties of HM is ability to always deduce the \italic{most general type} (\italic{principle type}) of every term.
 
@@ -1151,6 +1151,8 @@ leftBalance n = n
 \end{Verbatim}
 
 Another important aspect is that GADTs, just like all data types in Haskell, are closed: once they are declared, they can not be extended in the rest of the program. In contrast, type class instances are open. For example, we could split \verb|Expr e| type class into two separate type classes (this way we improve modularity):
+
+\EZY{You should probably cite Data Types a la Carte here}
 
 \begin{Verbatim}
 class ArithExpr e where
