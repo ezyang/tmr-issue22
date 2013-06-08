@@ -1,7 +1,7 @@
 issue = Issue22
 
 #lhssources = 
-texsources = Editorial.tex gadt.tex article.tex
+texsources = Editorial.tex gadt.tex article.tex monoids.tex
 
 default: $(issue).pdf
 

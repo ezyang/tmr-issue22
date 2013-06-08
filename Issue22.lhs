@@ -28,5 +28,6 @@
 \article{Editorial}
 \article{gadt}
 \article{article}
+\article{monoids}
 
 \end{document}

@@ -13,6 +13,8 @@
 \RequirePackage{amssymb}
 \RequirePackage{graphicx}
 
+\usepackage{rotating}
+
 % title
 \global\let\@authors\@empty
 \global\let\email\@gobble
@@ -34,12 +36,62 @@
   \title{The Monad.Reader\@issue}
 \fi
 
-\iftikz
   \RequirePackage{tikz}
-\fi
 
 \let\@issue\empty
 \def\issue#1{\gdef\@issue{ #1}}%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% tikz settings
+
+\usetikzlibrary{patterns}
+\pgfdeclarepatternformonly{soft crosshatch}{\pgfqpoint{-1pt}{-1pt}}{\pgfqpoint{4pt}{4pt}}{\pgfqpoint{3pt}{3pt}}%
+{
+  \pgfsetstrokeopacity{0.3}
+  \pgfsetlinewidth{0.4pt}
+  \pgfpathmoveto{\pgfqpoint{3.1pt}{0pt}}
+  \pgfpathlineto{\pgfqpoint{0pt}{3.1pt}}
+  \pgfpathmoveto{\pgfqpoint{0pt}{0pt}}
+  \pgfpathlineto{\pgfqpoint{3.1pt}{3.1pt}}
+  \pgfusepath{stroke}
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% listings settings
+
+\usepackage{listings}
+\lstloadlanguages{Haskell}
+\lstnewenvironment{spec}
+    {}
+    {}
+\lstset{
+    basicstyle=\small\ttfamily,
+    xleftmargin=\parindent,
+    xleftmargin=\parindent,
+    flexiblecolumns=false,
+    keepspaces=true,
+    basewidth={0.5em,0.45em},
+    literate={+}{{$+$}}1 {/}{{$/$}}1 {*}{{$*$}}1 {=}{{$=$}}1
+            {>}{{$>$}}1 {<}{{$<$}}1 {\\}{{$\lambda$}}1
+            {\\\\}{{\char`\\\char`\\}}1
+            {->}{{$\rightarrow$}}2 {>=}{{$\geq$}}2 {<-}{{$\leftarrow$}}2
+            {<=}{{$\leq$}}2 {=>}{{$\Rightarrow$}}2 
+%                {\ .}{{$\circ$}}2 {\ .\ }{{$\circ$}}2
+            {>>}{{>>}}2 {>>=}{{>>=}}2
+            {|}{{$\mid$}}1               
+            {<>}{{$\diamond$}}1          
+            {++}{{$\+$}}1                
+%             {mempty}{{$\epsilon$}}1               
+%             {mappend}{{$\diamond$}}1               
+}
+
+\lstnewenvironment{code}
+    {\lstset{
+      numbers=left,
+      firstnumber=1,
+      numberfirstline=true
+      }}
+    {}
+
 
 \renewcommand\titlepagestyle{empty}
 
