@@ -38,6 +38,8 @@ and then add error reporting in later in a modular way.
 \EZY{It's probably worth rephrasing what is stated in the abstract here,
 for those of us who are in the habit of skipping abstracts; it also helps
 build continuity.}
+\Matt{Could you give me any pointers on how to do this?  I can't figure out
+an effective way of doing it without just repeating the abstract verbatim.}
 
 Parser combinators are an excellent approach for building expressive, 
 declarative, and easy-to-maintain parsers.  They also benefit from host-language
@@ -70,6 +72,10 @@ implement a parser library ``from scratch'', but doesn't know how to use
 monad transformers to build them.  Perhaps the components of this
 presentation which are key to understanding how the monad transformer works should be
 fleshed out more.}
+\Matt{Good point, I did not have a specific audience in mind.  
+The article requires familiarity with monad transformers, but I don't think it should 
+require familiarity with parser combinators.  I'll work on improving this section with
+that in mind.}
 
 \begin{verbatim}
 newtype Parser t a = 
@@ -275,7 +281,11 @@ item =
                         []     -> empty;
 \end{verbatim}
 Note that the FlexibleContexts language extension is required by the 
-MonadState constraint in the type signature.  The mtl \EZY{which?} \Matt{I'm not sure what the library's called -- is it mtl or transformers?} \EZY{Well, both export the necessary interfaces. Just pick one and be consistent.} formulation of monad
+MonadState constraint in the type signature.  The mtl 
+\EZY{which?} 
+\Matt{I'm not sure what the library's called -- is it mtl or transformers?} 
+\EZY{Well, both export the necessary interfaces. Just pick one and be consistent.} 
+formulation of monad
 transformers relies heavily on extensions to the type system, more of which 
 we'll have to use for some of the later code in this article.
 
@@ -284,7 +294,8 @@ we'll have to use for some of the later code in this article.
 
 \section{Introducing Woof:  a Simple Lisp}
 
-\EZY{An alternate structure you can use here is to introduce Woof first, before talking about monad transformers.  After all, the example parser doesn't require you to know what is going on in transformer-land.}
+\EZY{An alternate structure you can use here is to introduce Woof first, before talking about monad transformers.  
+After all, the example parser doesn't require you to know what is going on in transformer-land.}
 
 The simple language we'll use as a motivation for building parsers is Woof, a 
 simple dialect of Lisp.  We'll be progressively adding features to a simple 
@@ -753,6 +764,8 @@ countLineCol = reverse . snd . foldl f ((1, 1), [])
 \subsection{Token parsers}
 \EZY{In contrast, this section doesn't seem very enlightening, so maybe
 it could be glossed over or relegated to an appendix.}
+\Matt{I don't quite understand -- I'm missing the context.
+What does "in constrast" refer to?"}
 By adding the position to the input, we've created a new problem 
 for ourselves: our original token parsers operated on 
 character lists, but we now need them to work on token lists.  
