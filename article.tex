@@ -1035,18 +1035,42 @@ work right with Maybe/State -- tokens are consumed even when the parsers
 don't match, as the example shows.
 
 On the other hand, the order of Error and Maybe relative to each other isn't 
-important.  But don't just take my word for it -- try it for yourself!
-\EZY{It's worth mentioning why, formally speaking, this is the case, which has
-to do with the relevant structures being isomorphic to each other.}
-\Matt{Uh-oh!  I don't really know anything formal about monad transformers,
-I really have no idea how to go about showing something like this!
-I guess I'll have to rethink my goals for this section.}
-\EZY{It's pretty simple, and just has to do with the fact that Maybe (Either a b) is
-equivalent (modulo laziness) with Either a (Maybe b).  To show this is a case, you have
-to define functions which convert from one to the other, and then show that the roundtrip
-is identity.}
+important.  We can show this by losslessly converting values from one stack to 
+the other and back:
+\begin{verbatim}
+type Stack1 e a = Either e (Maybe a)
+type Stack2 e a = Maybe (Either e a)
 
-Another important point to note is that our parsers don't specify
+forward :: Stack1 e a -> Stack2 e a
+forward (Left e)          =  Just $ Left e
+forward (Right Nothing)   =  Nothing
+forward (Right (Just x))  =  Just $ Right x
+
+backward :: Stack2 e a -> Stack1 e a
+backward Nothing           =  Right Nothing
+backward (Just (Left e))   =  Left e
+backward (Just (Right x))  =  Right $ Just x
+
+identityForward :: Stack1 e a -> Stack1 e a
+identityForward = backward . forward
+
+identityBackward :: Stack2 e a -> Stack2 e a
+identityBackward = forward . backward
+\end{verbatim}
+
+No partial functions were used.  Now we can use these functions to
+convert between the two stacks.  Note the final result is the same as the input:
+\begin{verbatim}
+vals = [Left "an error", Right Nothing, Right $ Just "success"]
+
+*Main> map forward vals
+[Just (Left "an error"),Nothing,Just (Right "success")]
+
+*Main> map identityForward vals
+[Left "an error",Right Nothing,Right (Just "success")]
+\end{verbatim}
+
+Another important point is that our parsers don't specify
 which order -- Maybe/State or State/Maybe -- they prefer, and will 
 work with either.  This means that the semantics are ultimately determined by 
 the actual monad stack we use.
