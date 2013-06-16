@@ -926,7 +926,7 @@ leftBalance c (IntNode SR a@(N SB _ _ _) x b@(N SB _ _ _)) z d =
 leftBalance c (IntNode SR E x E) z d = IntNode c (N SR E x E) z d
 \end{Verbatim}
 
-Unfortunately, we haven't yet listed all cases. We know that the following cases can't happen, but we do not have enough information in the type to omit them. We can skip them, but this means producing ``Non-exhaustive patterns'' exception for these impossible cases.
+Unfortunately, we haven't yet listed all cases. We know that the following cases can't happen, but we do not have enough information in the type to omit them. We can skip them, but this means producing ``Non-exhaustive patterns'' exception for these impossible cases. To workaround the corresponding warning message from Haskell compiler we are using the \verb|error| function:
 
 \begin{Verbatim}
 leftBalance _ (IntNode SR (N SR _ _ _) _ _) _ _ =
@@ -935,11 +935,7 @@ leftBalance _ (IntNode SR _ _ (N SR _ _ _)) _ _ =
     error "can't happen"
 \end{Verbatim}
 
-Note that the case of one regular node and one leaf node is not valid, because these nodes must have different black heights.
-
-Complete source code is in Appendix C.
-
-\EZY{The new sentence you added here is really awkward} We have shown that the insertion operation maintains all invariants in red-black trees by adding necessary properties to the tree data type and then modifying the functions accordingly. However, the previous code illustrates a general problem with proofs. In fact, in Haskell $\bot$ (bottom) is a member of every type. As a result, we can write:
+However, the previous code illustrates a general problem with proofs. In fact, in Haskell $\bot$ (bottom) is a member of every type. As a result, we can write:
 
 \begin{Verbatim}
 concatenate :: List a m -> List a n -> List a (Plus m n)
@@ -947,6 +943,12 @@ concatenate = undefined
 \end{Verbatim}
 
 This code type checks, but, of course, the implementation of the \verb|concatenate| function does not meet our expectations.
+
+By now we have specified all cases of the \verb|leftBalance| function (note that the case of one regular node and one leaf node is not valid, because these nodes must have different black heights; so, we do not need to take care of this case).
+
+Complete source code of this example is in Appendix C.
+
+In this section we have implemented and verified insertion operation in red-black trees. We have used GADTs to express invariants for this data type. This in turn guarantees that the tree is balanced and searching in such tree will take $O (\log n)$ time (where $n$ is total number of elements in the tree). Like in the previous example we extended the original data types with necessary properties to prove the invariants.
 
 \section{Type Signatures for Functions Involving GADTs}
 \label{sec:type_signatures}
