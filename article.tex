@@ -40,6 +40,8 @@ for those of us who are in the habit of skipping abstracts; it also helps
 build continuity.}
 \Matt{Could you give me any pointers on how to do this?  I can't figure out
 an effective way of doing it without just repeating the abstract verbatim.}
+\EZY{Hmm, I'd probably convert the abstract into the intro, and write a new,
+shorter abstract, like ``Monad transformers can be used to ...''}
 
 Parser combinators are an excellent approach for building expressive, 
 declarative, and easy-to-maintain parsers.  They also benefit from host-language
@@ -745,6 +747,9 @@ transformer approach?}
 the article is already long and this would add a lot, and the other approach 
 seems to work fine and is simple.
 But I'm not opposed to it at all.  Do you think I should switch it?}
+\EZY{I think that it is a worthwhile change to make, if it doesn't add a lot
+of extra stuff to the article.  I think it could be done that way, but if
+you don't think so I'm happy to let this lie.}
 \begin{verbatim}
 type Token = (Char, Int, Int)
 chr  (a, _, _)  =  a
@@ -766,6 +771,9 @@ countLineCol = reverse . snd . foldl f ((1, 1), [])
 it could be glossed over or relegated to an appendix.}
 \Matt{I don't quite understand -- I'm missing the context.
 What does "in constrast" refer to?"}
+\EZY{Sorry, I was referring to the terseness of the first section. So there
+you give very little explanation, while here you spend a lot of time explaining
+what is going on.}
 By adding the position to the input, we've created a new problem 
 for ourselves: our original token parsers operated on 
 character lists, but we now need them to work on token lists.  

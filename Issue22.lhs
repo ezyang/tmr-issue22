@@ -17,6 +17,7 @@
 \author{Anton Dergunov\email{anton.dergunov@@gmail.com}}
 \author{Matt Fenwick\email{mfenwick100@@gmail.com}}
 \author{Jay Vyas\email{jayunit100@@gmail.com}}
+\author{Mike Izbicki\email{mike@@izbicki.me}}
 
 \publishers{Edward Z. Yang, editor.}
 
