@@ -944,11 +944,9 @@ concatenate = undefined
 
 This code type checks, but, of course, the implementation of the \verb|concatenate| function does not meet our expectations.
 
-By now we have specified all cases of the \verb|leftBalance| function (note that the case of one regular node and one leaf node is not valid, because these nodes must have different black heights; so, we do not need to take care of this case).
+At this point, we have specified all cases of the \verb|leftBalance| function (note that the case of one regular node and one leaf node is not valid, because these nodes must have different black heights; so, we do not need to take care of this case). The complete source code of this example is in Appendix C.
 
-Complete source code of this example is in Appendix C.
-
-In this section we have implemented and verified insertion operation in red-black trees. We have used GADTs to express invariants for this data type. This in turn guarantees that the tree is balanced and searching in such tree will take $O (\log n)$ time (where $n$ is total number of elements in the tree). Like in the previous example we extended the original data types with necessary properties to prove the invariants.
+To sum up, we have implemented and verified the insertion operation on red-black trees. By using GADTs to express invariants for this data type, we guarantee that the tree is balanced and that searching in such tree will take $O (\log n)$ time (where $n$ is total number of elements in the tree).
 
 \section{Type Signatures for Functions Involving GADTs}
 \label{sec:type_signatures}
