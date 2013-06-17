@@ -22,6 +22,7 @@ clean:
 bib :
 	bibtex gadt
 	bibtex article
+	bibtex monoids
 
 final : $(issue).pdf bib
 	pdflatex $(issue).tex
