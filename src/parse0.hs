@@ -1,5 +1,4 @@
 import Control.Applicative  (Applicative(..), Alternative(..))
-import Control.Monad        (liftM, ap)
 
 newtype Parser t a = 
     Parser {getParser :: [t] -> Maybe ([t], a)}
@@ -10,18 +9,21 @@ item = Parser f
     f [] = Nothing
     f (x:xs) = Just (xs, x)
 
+instance Functor (Parser t) where
+  fmap f (Parser p) = Parser (fmap (fmap f) . p)
+  
+instance Applicative (Parser t) where
+  pure x = Parser (\xs -> pure (xs, x))
+  Parser p1 <*> Parser p2 = Parser p3
+    where p3 xs = case (p1 xs) of
+                       Nothing      -> Nothing;
+                       Just (ys, f) -> fmap (fmap f) (p2 ys)
+
 instance Monad (Parser t) where
-  return x = Parser (\ts -> Just (ts, x))
+  return x = Parser (\ts -> return (ts, x))
   Parser p >>= f = Parser (\ts ->
                              p ts >>= \(ts', x) ->
                              getParser (f x) ts')
-
-instance Functor (Parser t) where
-  fmap = liftM
-  
-instance Applicative (Parser t) where
-  pure = return
-  (<*>) = ap          
 
 instance Alternative (Parser t) where
   empty = Parser (const empty)

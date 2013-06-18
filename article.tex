@@ -17,19 +17,16 @@
 
 \begin{introduction}
 
-The goal of parsing, in abstract, is to take a string and build a tree
-representing the structure of this input according to a formal grammar.
-However, real-world parsers must also recognize faulty input and
-accurately report the location and cause of the problem.  What generates
-a parse error, how is that information included in the error, and how do
-error-reporting parsers compose?
+Monad transformers are used to deal with combinations of computational
+effects, including backtracking, errors, and state, in a modular and
+composable way \cite{liang}.
 
-Monad transformers provide a clean and simple answer to these questions.
-We'll show how monad transformers can be used to build a parser combinator
-and then add error reporting in later in a modular way.
+Real-world parsers require such computational effects in order to provide
+key features such as error reporting and context-sensitive results.
+This article will explore how monad transformers contribute to the design
+and implementation of parsers.
 
 \end{introduction}
-
 
 
 
@@ -43,17 +40,21 @@ an effective way of doing it without just repeating the abstract verbatim.}
 \EZY{Hmm, I'd probably convert the abstract into the intro, and write a new,
 shorter abstract, like ``Monad transformers can be used to ...''}
 
-Parser combinators are an excellent approach for building expressive, 
-declarative, and easy-to-maintain parsers.  They also benefit from host-language
-integration, allowing them to snarf features such as type systems and test 
-frameworks. 
+The goals of parsing are to: 1) decide whether a string is part of the language
+in question, and 2) build a meaningful representation of the structure of the
+parsed string.  In addition, practical parsers must recognize faulty input and
+accurately report the location and cause of the problem.  Thus, a parser must
+also decide what generates an error, what information is in the error, and how
+error-reporting parsers compose.
 
-There are many excellent papers on parser combinators, such
+Parser combinators are an excellent approach for building expressive, 
+composable and declarative parsers.  They also benefit from host-language
+integration, allowing them to snarf features such as type systems and test 
+frameworks.  There are many excellent papers on parser combinators, such
 as Wadler's classic paper \cite{wadler} on non-deterministic parser combinators, 
 Hutton's paper which covers factoring parsers into smaller pieces \cite{hutton}, 
-and Leijen's Parsec paper \cite{leijen}.
-The inspiration and many of the names used in this article are drawn 
-from those references.
+and Leijen's Parsec paper \cite{leijen}.  The inspiration and many of the names 
+used in this article are drawn from those references.
 
 To get a feel for what parser combinators are and how they're used to
 build parsers, we'll quickly create a minimal parser combinator library to see
@@ -61,9 +62,10 @@ the basic principles of their design before adding monad transformers to
 the mix.  We'll divide the library into three main pieces of the code:
 
 \begin{itemize}
- \item a Parser datatype
- \item parser-specific combinators
+ \item Parser datatype
+ \item a primitive parser
  \item type class instances
+ \item combinators
 \end{itemize}
 
 \subsection{Parser datatype}
@@ -79,51 +81,33 @@ The article requires familiarity with monad transformers, but I don't think it s
 require familiarity with parser combinators.  I'll work on improving this section with
 that in mind.}
 
+Parsers operate on token sequences, consuming tokens from the front of the sequence.
+We could model this with the function type:
+\begin{verbatim}
+newtype Parser t = 
+    Parser {getParser :: [t] -> [t]}
+\end{verbatim}
+
+But this ignores the possibility of failure.  To allow for failure, the return value needs to
+be wrapped in a Maybe:
+\begin{verbatim}
+newtype Parser t = 
+    Parser {getParser :: [t] -> Maybe [t]}
+\end{verbatim}
+
+But we also want parsers to return a value, if they succeed.  So let's extend the return type
+again to allow for a value, which also requires a second type parameter:
 \begin{verbatim}
 newtype Parser t a = 
     Parser {getParser :: [t] -> Maybe ([t], a)}
 \end{verbatim}
-This type definition defines Parser to be a function
-on a list of tokens, producing a new list of tokens and a result
-value, possibly failing.
 
-\subsection{Type class instances}
-For running parsers in sequence, we'll use the combinators from the Monad and
-Applicative type classes.  There's a little bit of book-keeping involved in the
-Monad instance -- it has to make sure that the correct token list is used by
-each parser -- but once we have a Monad instance, the Applicative and Functor
-instances can be handled by imports \verb+ap+ and \verb+liftM+ from Control.Monad.
-\EZY{Fun fact: it is possible to create parsers which only have an applicative instance,
-and are more efficient but less expressive than the style you have here!}
-\begin{verbatim}
-import Control.Applicative  (Applicative(..), Alternative(..))
-import Control.Monad        (liftM, ap)
+We've used \verb+newtype+ instead of \verb+type+ so that we can create type class instances
+for our parsers later on.
 
-instance Monad (Parser t) where
-  return x = Parser (\ts -> Just (ts, x))
-  Parser p >>= f = Parser (\ts ->
-                             p ts >>= \(ts', x) ->
-                             getParser (f x) ts')
 
-instance Functor (Parser t) where
-  fmap = liftM
-
-instance Applicative (Parser t) where
-  pure = return
-  (<*>) = ap
-\end{verbatim}
-
-We use the Alternative type class for expressing choice; the Parser instance is
-is defined in terms of the Alternative instance of the
-underlying result type, \verb+Maybe+.
-\begin{verbatim}
-instance Alternative (Parser t) where
-  empty = Parser (const empty)
-  Parser l <|> Parser r = Parser (\ts -> l ts <|> r ts)
-\end{verbatim}
-
-\subsection{Parser-specific combinators}
-\verb+item+ is a very simple parser; it 
+\subsection{A primitive parser}
+The simplest parser is \verb+item+; it 
 consumes a single token if available and fails otherwise:
 \begin{verbatim}
 item :: Parser t t
@@ -133,23 +117,82 @@ item = Parser f
     f (x:xs) = Just (xs, x)
 \end{verbatim}
 
-The \verb+check+ combinator is analogous to \verb+Control.Monad.mfilter+, which is used to
-validate a parse result:
+This captures the basic concept that parsers are inherently sequential --
+they consume tokens left-to-right from a list.
+
+
+\subsection{Type class instances}
+For running multiple parsers in sequence, the combinators from the Monad and
+Applicative type classes are great -- which means we need instances for
+them.
+
+First is the Functor instance, which we need since it's a superclass
+of Applicative.  It just maps a function over the result value, and
+relies on the Functor instances of Maybe and pairs:
+\begin{verbatim}
+instance Functor (Parser t) where
+  fmap f (Parser p) = Parser (fmap (fmap f) . p)
+\end{verbatim}
+
+The \verb+<*>+ operator of Applicative runs parsers sequentially, 
+and applies the result of the first to the result of the second; it
+has to make sure that the (possibly modified) output token stream from
+the first parser is passed to the second:
+\begin{verbatim}  
+import Control.Applicative  (Applicative(..))
+
+instance Applicative (Parser t) where
+  pure x = Parser (\xs -> pure (xs, x))
+  Parser p1 <*> Parser p2 = Parser p3
+    where p3 xs = case (p1 xs) of
+                       Nothing      -> Nothing;
+                       Just (ys, f) -> fmap (fmap f) (p2 ys)
+\end{verbatim}
+
+The Monad instance is similar to the Applicative instance, except that 
+the actual result value of the first parser is used to generate the 
+second parser; similarly to the Functor instance, this depends on 
+instances of its underlying types:
+\begin{verbatim}
+instance Monad (Parser t) where
+  return x = Parser (\ts -> return (ts, x))
+  Parser p >>= f = Parser (\ts ->
+                             p ts >>= \(ts', x) ->
+                             getParser (f x) ts')
+\end{verbatim}
+
+The Alternative type class expresses choice; the instance is
+is defined in terms of the Alternative instance of the
+underlying result type, \verb+Maybe+.
+\begin{verbatim}
+import Control.Applicative  (Alternative(..))
+
+instance Alternative (Parser t) where
+  empty = Parser (const empty)
+  Parser l <|> Parser r = Parser (\ts -> l ts <|> r ts)
+\end{verbatim}
+
+
+\subsection{Combinators}
+We can capture common patterns of parser construction in combinators in 
+order to make it more convenient.  The \verb+check+ combinator, analogous 
+to \verb+Control.Monad.mfilter+, is used to validate a parse result:
 \begin{verbatim}
 check :: (Monad f, Alternative f) => (a -> Bool) -> f a -> f a
 check p m =
     m >>= \x -> if p x then return x else empty
 \end{verbatim}
 
-Using \verb+check+, we can build a very convenient combinator to parse specific
+Using \verb+check+, we can build a convenient combinator to parse specific
 matching tokens: 
 \begin{verbatim}
 literal :: Eq t => t -> Parser t t
 literal x = check (== x) item
 \end{verbatim}
 
+
 \subsection{Examples}
-Now for some examples:  first, let's see \verb+item+ in action.  It fails on empty lists,
+First, let's see \verb+item+ in action.  It fails on empty lists,
 and succeeds consuming one token otherwise:
 \begin{verbatim}
 *Main> getParser item ""
