@@ -250,7 +250,6 @@ they're easy to install, easy to use, and very useful.
 
 First, note that the parser type we used earlier -- \verb+[t] -> Maybe ([t], a)+
 -- can be built out of the StateT monad transformer applied to Maybe.
-\EZY{Do you maybe want to say why this is the case?}
 From the implementation:
 \begin{verbatim}
 newtype StateT s m a = StateT { runStateT :: s -> m (a,s) }
@@ -283,11 +282,7 @@ item =
                         []     -> empty;
 \end{verbatim}
 Note that the FlexibleContexts language extension is required by the 
-MonadState constraint in the type signature.  The mtl 
-\EZY{which?} 
-\Matt{I'm not sure what the library's called -- is it mtl or transformers?} 
-\EZY{Well, both export the necessary interfaces. Just pick one and be consistent.} 
-formulation of monad
+MonadState constraint in the type signature.  The mtl formulation of monad
 transformers relies heavily on extensions to the type system, more of which 
 we'll have to use for some of the later code in this article.
 
