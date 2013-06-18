@@ -285,26 +285,23 @@ while taking advantage of monad transformers to keep them modular.
 
 
 \section{Monad transformers}
-Monad transformers~\cite{liang} provide a method of combining monads into
-new monads which support operations of each of their constituents.  
-By applying monad transformers, we can build semantically rich parsers without sacrificing modularity.
-We'll use the standard transformers/mtl \cite{mtl} libraries -- 
-they're easy to install, easy to use, and very useful.
 
-First, note that the parser type we used earlier -- \verb+[t] -> Maybe ([t], a)+
--- can be built out of the StateT monad transformer applied to Maybe.
-From the implementation:
+How can we use monad transformers to help us create parsers and parser combinators?
+The parser type we used earlier -- \verb+[t] -> Maybe ([t], a)+
+-- can be built out of the StateT monad transformer (from the standard 
+mtl \cite{mtl} library) applied to Maybe.  Here's the StateT implementation:
 \begin{verbatim}
 newtype StateT s m a = StateT { runStateT :: s -> m (a,s) }
 \end{verbatim}
+
 Substituting in [s] for s and Maybe for m in the right-hand side produces
 (note that the type variable m is no longer needed):
 \begin{verbatim}
 newtype StateT s a = StateT { runStateT :: [s] -> Maybe (a,[s]) }
 \end{verbatim}
-Which is identical to the Parser type given before, except for the order 
-of the result tuple.
-This allows us to define the new parser type as:
+
+This is identical to the Parser type given before, except for the order 
+of the result tuple, and so we can redefine the parser type as:
 \begin{verbatim}
 import Control.Monad.State       (StateT(..))
 
@@ -324,10 +321,16 @@ item =
                         (t:ts) -> put ts *> pure t;
                         []     -> empty;
 \end{verbatim}
-Note that the FlexibleContexts language extension is required by the 
-MonadState constraint in the type signature.  The mtl formulation of monad
-transformers relies heavily on extensions to the type system, more of which 
-we'll have to use for some of the later code in this article.
+
+There are two major benefits to our parsers from using monad transformers:
+\begin{itemize}
+ \item semantic building blocks -- the mtl library provides implementations
+    for Maybe, Error, and State building blocks; using these, we can describe
+    describe the semantics of our parsers
+ \item type class instances -- in addition to providing the building blocks,
+    the mtl provides instances for common type classes, so we only have to 
+    worry about parser-specific operations
+\end{itemize}
 
 
 
