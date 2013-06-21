@@ -775,81 +775,9 @@ instance Functor m => Switch (MaybeT m) where
   switch (MaybeT m) = MaybeT (fmap switch m)
 \end{verbatim}
 
-\subsection{Reporting position}
-To report error position, we'll pre-process the input
-string to calculate the line and column number of each character.  Then, instead 
-of our parsers operating on a list of characters, they'll operate on a list of 
-Tokens, where a Token is a character tupled up with a line number and column 
-number, which we'll express with a simple typedef and some accessor functions:
-\EZY{I don't think this is how most real parser libraries do it.  Why not do it
-with some extra state on the parser monad; it's yet another application of the
-transformer approach?}
-\Matt{Good point, I thought about doing it this way but decided not to because
-the article is already long and this would add a lot, and the other approach 
-seems to work fine and is simple.
-But I'm not opposed to it at all.  Do you think I should switch it?}
-\EZY{I think that it is a worthwhile change to make, if it doesn't add a lot
-of extra stuff to the article.  I think it could be done that way, but if
-you don't think so I'm happy to let this lie.}
-\begin{verbatim}
-type Token = (Char, Int, Int)
-chr  (a, _, _)  =  a
-line (_, b, _)  =  b
-col  (_, _, c)  =  c
-\end{verbatim}
-The function responsible for calculating the position will simply transform a 
-list of characters into a list of tokens:
-\begin{verbatim}
-countLineCol :: [Char] -> [Token]
-countLineCol = reverse . snd . foldl f ((1, 1), [])
-  where
-    f ((line, col), ts) '\n' = ((line + 1, 1), ('\n', line, col):ts)
-    f ((line, col), ts)  c   = ((line, col + 1), (c, line, col):ts)
-\end{verbatim}
-
-\subsection{Token parsers}
-\EZY{In contrast, this section doesn't seem very enlightening, so maybe
-it could be glossed over or relegated to an appendix.}
-\Matt{I don't quite understand -- I'm missing the context.
-What does "in constrast" refer to?"}
-\EZY{Sorry, I was referring to the terseness of the first section. So there
-you give very little explanation, while here you spend a lot of time explaining
-what is going on.}
-By adding the position to the input, we've created a new problem 
-for ourselves: our original token parsers operated on 
-character lists, but we now need them to work on token lists.  
-The cause of the problem is the \verb+literal+ combinator, so we
-replace it with a similar one for token lists:
-\begin{verbatim}
-character :: (MonadState [Token] m, 
-              Alternative m) => Char -> m Token
-character c = satisfy ((==) c . chr)
-\end{verbatim}
-
-Now our token parsers are:
-\begin{verbatim}
-whitespace = many1 $ satisfy (flip elem " \n\t\r\f" . chr)
-comment = pure (:) <*> character ';' <*> many0 chars
-  where chars = not1 $ character '\n'
-
-munch p = many0 (whitespace <+> comment) *> p
-
-ocurly = munch $ character '{'
-ccurly = munch $ character '}'
-oparen = munch $ character '('
-cparen = munch $ character ')'
-symbol = munch $ many1 char
-  where char = fmap chr $ satisfy (f . chr)
-        f = flip elem (['a' .. 'z'] ++ ['A' .. 'Z'])
-\end{verbatim}
-
-The only differences were the replacement of \verb+literal+ with \verb+character+ 
-and a couple uses of the \verb+chr+ accessor.  The \verb+munch+ combinator didn't 
-have to change at all (although its inferred type did in fact change).
-
 \subsection{Error messages}
-Now, we modify the remaining parsers to report accurate and useful errors.
-Here are the error messages that we'll use to report each error:
+We must modify the remaining parsers to report meaningful error messages; let's
+define the messages that will be reported in each case:
 \begin{verbatim}
 eAppOper    =  "application: missing operator"
 eAppClose   =  "application: missing close parenthesis"
@@ -897,58 +825,52 @@ Now let's start with \verb+application+ as our first modified, error-reporting
 parser:
 \begin{verbatim}
 application =
-    openparen                             >>= \open ->
-    commit (eAppOper, open) form          >>= \op ->
-    many0 form                            >>= \args ->
-    commit (eAppClose, open) closeparen   >>
+    openparen                     >>
+    commit eAppOper form          >>= \op ->
+    many0 form                    >>= \args ->
+    commit eAppClose closeparen   >>
     return (AApp op args)
 \end{verbatim}
-This parser works by running the open-parenthesis parser, capturing its value 
-in \verb+open+, and continuing with the parsing; if either \verb+form+ or 
-close-parenthesis fails, an appropriate error is generated with a message and 
-the location of the open parenthesis.  However, if the open 
+
+This parser works by first running the open-parenthesis parser; then, if either 
+\verb+form+ or close-parenthesis fails, an appropriate error is generated with 
+a message describing the problem.  However, if the open 
 parenthesis is not successfully parsed, it's a failure but not an error.  
 Examples:
 \begin{verbatim}
-*Main> runParser application (countLineCol "oops")
+*Main> runParser application "oops"
 Right Nothing
 
-*Main> runParser application (countLineCol "(a b c)")
-Right (Just (AApp (ASymbol "a") [ASymbol "b",ASymbol "c"],[]))
+*Main> runParser application "(a b c)"
+Right (Just (AApp (ASymbol "a") [ASymbol "b",ASymbol "c"],""))
 
-*Main> runParser application (countLineCol "\n()")
-Left ("application: missing operator",('(',2,1))
+*Main> runParser application "\n()"
+Left "application: missing operator"
 
-*Main> runParser application (countLineCol "(a b")
-Left ("application: missing close parenthesis",('(',1,1))
+*Main> runParser application "(a b"
+Left "application: missing close parenthesis"
 \end{verbatim}
-
-Although the previous version of the \verb+application+ parser was implemented 
-with just applicative combinators, this version can't be:  \verb+open+ 
-is used to build the following parsers, making this monadic.
 
 The \verb+define+ and \verb+lambda+ parsers are upgraded similarly:
 \begin{verbatim}
 define =
-    opencurly                            >>= \open ->
-    check (== "define") symbol            *>
-    pure ADefine                         <*>
-    commit (eDefSym, open) symbol        <*>
-    commit (eDefForm, open) form         <*
-    commit (eDefClose, open) closecurly  
-
+    check (== "define") symbol    *>
+    pure ADefine                 <*>
+    commit eDefSym symbol        <*>
+    commit eDefForm form         <*
+    commit eDefClose closecurly
+    
 lambda =
-    opencurly                                >>= \open ->
-    check (== "lambda") symbol               >>
-    commit (eLamParam, open) opencurly       >>= \p_open ->
-    many0 symbol                             >>= \params ->
+    check (== "lambda") symbol       >>
+    commit eLamParam opencurly       >>
+    many0 symbol                     >>= \params ->
     (if distinct params 
         then return ()
-        else throwError (eLamDupe, p_open))  >>
-    commit (eLamPClose, p_open) closecurly   >>
-    commit (eLamBody, open) (many1 form)     >>= \bodies ->
-    commit (eLamClose, open) closecurly      >>
-    return (ALambda params bodies)
+        else throwError eLamDupe)    >>
+    commit eLamPClose closecurly     >>
+    commit eLamBody (many1 form)     >>= \bodies ->
+    return (ALambda params bodies)   <*
+    commit eLamClose closecurly  
   where
     distinct names = length names == length (nub names)
 \end{verbatim}
@@ -967,12 +889,10 @@ errors cleanly and accurately.
 To complete the error-reporting parser, we need to change a couple more details. 
 First, we want an error reported when an open curly brace is found, but no 
 special form can be parsed.  We extend the \verb+special+ 
-parser with a third alternative, which throws an error if it can parse
-an open curly brace:
+parser to report an error if it matches an open brace but not define or lambda:
 \begin{verbatim}
-special = define   <+> 
-          lambda   <+> 
-          (ocurly >>= \o -> throwError (esName, o))
+special = 
+    opencurly  *>  commit eSpecial (define <|> lambda)
 \end{verbatim}
 
 The \verb+form+ parser doesn't have to be changed:
@@ -983,26 +903,21 @@ form = fmap ASymbol symbol <+> application <+> special
 When we can no longer parse any forms, instead of failing, we'd like to report 
 an error if there's any input left, and otherwise succeed.  Our ending parser
 must first munch any leading whitespace or comments, as usual, and then check 
-whether there are any tokens left.  If there are, it should report an error at 
-the location of the first remaining token:
+whether there are any characters left; if there are, it should report an error:
 \begin{verbatim}
 endCheck = 
-    many0 (whitespace <+> comment) *>
-    get >>= \xs -> case xs of
-                        (t:_) -> throwError (ewUnp, t)
-                        []    -> pure ()
+    many0 (whitespace <|> comment) *>
+    switch item
 \end{verbatim}
 The \verb+woof+ parser uses \verb+endCheck+ after consuming all possible forms:
 \begin{verbatim}
-woof = many0 form <* endCheck
+woof = many0 form <* commit eWoof endCheck
 \end{verbatim}
 
 \subsection{Error messages:  examples}
 While correct input is still parsed successfully:
 \begin{verbatim}
-*Main> let p = runParser woof . countLineCol
-
-*Main> p "{define fgh {lambda {f x} (f x)}}"
+*Main> runParser woof "{define fgh {lambda {f x} (f x)}}"
 Right (Just ([ADefine "fgh" (ALambda ["f","x"] 
                                      [AApp (ASymbol "f") 
                                            [ASymbol "x"]])],
@@ -1012,42 +927,23 @@ Right (Just ([ADefine "fgh" (ALambda ["f","x"]
 Incorrect input results in an error.  For each of the items in our error spec, 
 we can show that our parser correctly reports an error: 
 \begin{verbatim}
-*Main> p "()"
-Left ("application: missing operator",('(',1,1))
+*Main> runParser woof "(a b"
+Left "application: missing close parenthesis"
 
-*Main> p "(a b"
-Left ("application: missing close parenthesis",('(',1,1))
-
-*Main> p "{define (a b c)}"
-Left ("define: missing symbol",('{',1,1))
-
-*Main> p "{define a}"
-Left ("define: missing form",('{',1,1))
-
-*Main> p "{define a b"
-Left ("define: missing close curly",('{',1,1))
-
-*Main> p "{lambda (a b c)}"
-Left ("lambda: missing parameter list",('{',1,1))
-
-*Main> p "{lambda {a b a} (a b c)}"
-Left ("lambda: duplicate parameter names",('{',1,9))
-
-*Main> p "{lambda {a b (c d)}"
-Left ("lambda: missing parameter list close curly",('{',1,9))
-
-*Main> p "{lambda {a b}}"
-Left ("lambda: missing body form",('{',1,1))
-
-*Main> p "{lambda {a b} (c d)"
-Left ("lambda: missing close curly",('{',1,1))
-
-*Main> p "{defin x y}"
-Left ("special form: unable to parse",('{',1,1))
-
-*Main> p "a,b"
-Left ("woof: unparsed input",(',',1,2))
+*Main> runParser woof "{define (a b c)}"
+Left "define: missing symbol"
 \end{verbatim}
+
+And so on.
+
+
+
+
+\section{Example 3: reporting position}
+
+... new code ...
+
+
 
 
 \Red{It's worth noting that up until this point, we haven't talked about how transformers contribute to the design of the parser library.  Maybe give the juicy bits earlier.}

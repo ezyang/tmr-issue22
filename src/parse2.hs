@@ -162,7 +162,7 @@ lambda =
     distinct names = length names == length (nub names)
 
 special = 
-    opencurly  *>  (define <|> lambda <|> throwError eSpecial)
+    opencurly  *>  commit eSpecial (define <|> lambda)
 
 form = fmap ASymbol symbol <|> application <|> special
 
