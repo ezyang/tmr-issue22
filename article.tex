@@ -941,7 +941,46 @@ And so on.
 
 \section{Example 3: reporting position}
 
-... new code ...
+Knowing that a close-parenthesis is missing, somewhere deep inside a nested mess
+of forms isn't very helpful -- you also want to know where it happened.  Let's 
+add that to our parser.
+
+\subsection{Parser type}
+
+Once again, we extend the monad transformer stack with another layer -- a second
+state layer, in which the line and column position will be kept as simple Ints.
+The error type is also extended to include a position as well as a message:
+\begin{verbatim}
+type Pos = (Int, Int)
+type Err = (String, Pos)
+
+type Parser t a = StateT [t] (StateT Pos (MaybeT (Either Err))) a 
+\end{verbatim}
+
+And \verb+runParser+ is extended to support the new stack; it assumes we always
+start parsing at line 1, column 1:
+\begin{verbatim}
+runParser :: Parser t a -> [t] -> Either Err (Maybe ((a, [t]), Pos))
+runParser p ts = runMaybeT $ runStateT (runStateT p ts) (1, 1)
+\end{verbatim}
+
+Now that we have two separate state layers, we need to be sure not to mix them 
+up (fortunately, Haskell's type system will helpfully complain if I mess up);
+the \verb+lift+ method of the \verb+MonadTrans+ type class allows us to access
+the position state:
+\begin{verbatim}
+getState :: Parser Char Pos
+getState = lift get
+
+putState :: Pos -> Parser Char ()
+putState = lift . put
+
+updateState :: (Pos -> Pos) -> Parser Char ()
+updateState f = getState >>= (putState . f)
+\end{verbatim}
+
+
+\subsection{}
 
 
 
