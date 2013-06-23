@@ -1150,9 +1150,9 @@ leftBalance (N B (N R a x (N R b y c)) z d) =
 leftBalance n = n
 \end{Verbatim}
 
-Another important aspect is that GADTs, just like all data types in Haskell, are closed: once they are declared, they can not be extended in the rest of the program. In contrast, type class instances are open. For example, we could split \verb|Expr e| type class into two separate type classes (this way we improve modularity):
+Another important aspect is that GADTs, just like all data types in Haskell, are closed: once they are declared, they can not be extended in the rest of the program. This issue is called the \italic{expression problem}~\cite{expression_problem}. Wouter Swierstra describes a technique to solve this problem in the article ``Data types \`{a} la carte''~\cite{a_la_carte}.
 
-\EZY{You should probably cite Data Types a la Carte here}
+In contrast, type class instances are open. For example, we could split \verb|Expr e| type class into two separate type classes (this way we improve modularity):
 
 \begin{Verbatim}
 class ArithExpr e where
