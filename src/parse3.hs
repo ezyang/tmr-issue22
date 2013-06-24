@@ -142,15 +142,14 @@ eAppOper    =  "application: missing operator"
 eAppClose   =  "application: missing close parenthesis"
 eDefSym     =  "define: missing symbol"
 eDefForm    =  "define: missing form"
-eDefClose   =  "define: missing close curly"
 eLamParam   =  "lambda: missing parameter list"
 eLamDupe    =  "lambda: duplicate parameter names"
 eLamPClose  =  "lambda: missing parameter list close curly"
 eLamBody    =  "lambda: missing body form"
-eLamClose   =  "lambda: missing close curly"
+eSpecClose  =  "special form: missing close curly"
 eSpecial    =  "special form: unable to parse"
 eWoof       =  "woof: unparsed input"
--- other possibilities:  non-symbol in parameter list
+
 
 cut :: String -> Parser Char a -> Parser Char a
 cut message parser = 
@@ -169,7 +168,6 @@ define =
     check (== "define") symbol    >>
     cut eDefSym symbol            >>= \s ->
     cut eDefForm form             >>= \f ->
-    cut eDefClose closecurly      >>
     return (ADefine s f)
     
 lambda =
@@ -181,13 +179,12 @@ lambda =
         else cut eLamDupe empty)      >>
     cut eLamPClose closecurly         >>
     cut eLamBody (many1 form)         >>= \bodies ->
-    cut eLamClose closecurly          >>
     return (ALambda params bodies)
   where
     distinct names = length names == length (nub names)
 
 special = 
-    opencurly  *>  cut eSpecial (define <|> lambda)
+    opencurly  *>  cut eSpecial (define <|> lambda)  <*  cut eSpecClose closecurly
 
 form = fmap ASymbol symbol <|> application <|> special
 
