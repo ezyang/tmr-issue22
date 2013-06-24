@@ -110,13 +110,15 @@ type Error = String
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
 comment = pure (:) <*> literal ';' <*> many0 (not1 $ literal '\n')
 
-munch p = many0 (whitespace <|> comment) *> p
+junk = many0 (whitespace <|> comment) 
 
-opencurly  = munch $ literal '{'
-closecurly = munch $ literal '}'
-openparen  = munch $ literal '('
-closeparen = munch $ literal ')'
-symbol = munch $ many1 char
+tok p = p <* junk
+
+opencurly  = tok $ literal '{'
+closecurly = tok $ literal '}'
+openparen  = tok $ literal '('
+closeparen = tok $ literal ')'
+symbol = tok $ many1 char
   where char = satisfy (flip elem (['a' .. 'z'] ++ ['A' .. 'Z']))
 
 eAppOper    =  "application: missing operator"
@@ -166,9 +168,7 @@ special =
 
 form = fmap ASymbol symbol <|> application <|> special
 
-endCheck = 
-    many0 (whitespace <|> comment) *>
-    switch item
+endCheck = switch item
 
 woof :: Parser String Char [AST]
-woof = many0 form <* commit eWoof endCheck
+woof = junk *> many0 form <* commit eWoof endCheck

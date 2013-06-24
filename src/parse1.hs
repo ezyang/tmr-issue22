@@ -77,13 +77,15 @@ example = "{define \n\
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
 comment = pure (:) <*> literal ';' <*> many0 (not1 $ literal '\n')
 
-munch p = many0 (whitespace <|> comment) *> p
+junk = many0 (whitespace <|> comment) 
 
-opencurly  = munch $ literal '{'
-closecurly = munch $ literal '}'
-openparen  = munch $ literal '('
-closeparen = munch $ literal ')'
-symbol = munch $ many1 char
+tok p = p <* junk
+
+opencurly  = tok $ literal '{'
+closecurly = tok $ literal '}'
+openparen  = tok $ literal '('
+closeparen = tok $ literal ')'
+symbol = tok $ many1 char
   where char = satisfy (flip elem (['a' .. 'z'] ++ ['A' .. 'Z']))
 
 application =
@@ -94,7 +96,6 @@ application =
     closeparen
 
 define =
-    opencurly                    *>
     check (== "define") symbol   *>
     pure ADefine                <*>
     symbol                      <*>
@@ -102,7 +103,6 @@ define =
     closecurly
 
 lambda = 
-    opencurly                       *>
     check (== "lambda") symbol      *>
     opencurly                       *>
     pure ALambda                   <*>
@@ -113,11 +113,13 @@ lambda =
   where
     distinct names = length names == length (nub names)
 
-special = define <|> lambda
+special = opencurly *> (define <|> lambda)
 
 form = fmap ASymbol symbol <|> application <|> special
 
-woof = many1 form <* munch end
+endCheck = switch item
+
+woof = junk *> many0 form <* endCheck
 
 test = runParser woof example == r
   where r = Just ([ADefine "f" (ALambda ["x","y"] [AApp (ASymbol "plus") [ASymbol "x",ASymbol "y"]]),
