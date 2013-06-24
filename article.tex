@@ -359,7 +359,7 @@ Comment      :=   ';'  (not '\n')(*)
 \end{verbatim}
 
 With the additional rule that whitespace and comments may appear in any 
-amount before any token.  Tokens are:
+amount before or after tokens.  Tokens are:
 \begin{itemize}
   \item \verb+{+
   \item \verb+}+
@@ -427,16 +427,9 @@ And some examples to make sure it's behaving correctly: \EZY{An example?! Why no
 
 Good, it correctly accepts open curly brackets and rejects everything else.
 But what about the spec that said that comments and whitespace can occur 
-before any token -- will our parser be able to handle that?
-\begin{verbatim}
-*Main> map (runParser  opencurly) ["}abc", "(abc", "abc"]
-Nothing
-\end{verbatim}
+anywhere before or after tokens -- how should that be handled?
 
-Of course not -- we haven't told it how to skip comments and whitespace yet!
-Let's do that now, first by defining the whitespace and comment patterns, then
-by creating a \verb+munch+ combinator that takes in a parser, 
-throws away all leading junk, and finally runs the parser.  Also, we rename
+First we need to define the whitespace and comment patterns -- and also rename
 the \verb+some+ and \verb+many+ functions from Control.Alternative to more
 clearly indicate their semantics:
 \begin{verbatim}
@@ -445,8 +438,15 @@ many1 = some
 
 whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
 comment = pure (:) <*> literal ';' <*> many0 (not1 $ literal '\n')
+\end{verbatim}
 
-munch p = many0 (whitespace <+> comment) *> p
+So what we want to throw away are comments and whitespace; and let's throw them 
+away after every token, using a combinator which first parses a token, and then
+throws away junk:
+\begin{verbatim}
+junk = many0 (whitespace <|> comment) 
+
+tok p = p <* junk
 \end{verbatim}
 
 Here are these three parsers in action:
@@ -957,7 +957,7 @@ type Err = (String, Pos)
 type Parser t a = StateT [t] (StateT Pos (MaybeT (Either Err))) a 
 \end{verbatim}
 
-And \verb+runParser+ is extended to support the new stack; it assumes we always
+\verb+runParser+ is extended to support the new stack; it assumes we always
 start parsing at line 1, column 1:
 \begin{verbatim}
 runParser :: Parser t a -> [t] -> Either Err (Maybe ((a, [t]), Pos))
@@ -979,6 +979,25 @@ updateState :: (Pos -> Pos) -> Parser Char ()
 updateState f = getState >>= (putState . f)
 \end{verbatim}
 
+We also need to update \verb+item+, such that when it consumes a character, 
+it updates the line/column position.  We'll do this by splitting it into two
+parts, the part that consumes a single character, and the part that updates the
+position:
+\begin{verbatim}
+basic_item :: (MonadState [t] m, Alternative m) => m t
+basic_item =
+    get >>= \xs -> case xs of
+                        (t:ts) -> put ts *> pure t;
+                        []     -> empty;
+
+item :: Parser Char Char
+item = basic_item >>= \x -> updateState (f x) >> pure x
+  where f '\n' (ln, c) = (ln + 1, 1)
+        f _    (ln, c) = (ln, c + 1)
+\end{verbatim}
+
+For simplicity, only '\n' characters will count as newlines; every other character,
+including tabs, will count as a single column on the same line.
 
 \subsection{}
 
@@ -1071,6 +1090,49 @@ Another important point is that our parsers don't specify
 which order -- Maybe/State or State/Maybe -- they prefer, and will 
 work with either.  This means that the semantics are ultimately determined by 
 the actual monad stack we use.
+
+
+
+
+\section{Monad transformer motivation}
+Let's take a quick look at what we've done from a different perspective that
+may help motivate why monad transformers were used.
+
+In the first parser, we could parse valid input, but invalid input left us with
+absolutely no idea what the problem was or where:
+\begin{verbatim}
+*Main> runParser woof " {define const {lambda {x x} x}} "
+Nothing
+\end{verbatim}
+
+The second parser reported what the problem was, but not where:
+\begin{verbatim}
+*Main> runParser woof " {define const {lambda {x x} x}} "
+Left "lambda: duplicate parameter names"
+\end{verbatim}
+
+And the third parser was able to report both what and where the problem occurred:
+\begin{verbatim}
+*Main> runParser woof " {define const {lambda {x x} x}} "
+Left ("lambda: duplicate parameter names",(1,25))
+\end{verbatim}
+
+Thus, a key to the usefulness of the last parser is that it supports monadic
+effects -- backtracking, error reporting, and state.  The parsers which supported 
+fewer effects were not as useful.
+
+This emphasizes some major advantages of using monad transformers:
+\begin{itemize}
+ \item it's easy to create stacks supporting multiple effects
+ \item type class instances are taken care of by the library, so stacks already
+       support many useful combinators
+ \item it's easy to change the composition and order of stacks
+\end{itemize}
+
+\Matt{hmm, the last point can be a disadvantage as well}
+
+We benefitted from these advantages when many of the parsers didn't have to change 
+at all from one version to the next (although some of their types did change).
 
 
 
