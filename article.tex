@@ -419,13 +419,12 @@ First, a simple bracket parser:
 opencurly = literal '{'
 \end{verbatim}
 
-And some examples to make sure it's behaving correctly: \EZY{An example?! Why not a QuickCheck property? \verb|;-)|}
+It accepts open curly brackets and rejects everything else:
 \begin{verbatim}
 *Main> map (runParser  opencurly) ["{abc", "}abc", "(abc", "abc"]
 [Just ('{', "abc"), Nothing, Nothing, Nothing]
 \end{verbatim}
 
-Good, it correctly accepts open curly brackets and rejects everything else.
 But what about the spec that said that comments and whitespace can occur 
 anywhere before or after tokens -- how should that be handled?
 
@@ -440,37 +439,13 @@ whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
 comment = pure (:) <*> literal ';' <*> many0 (not1 $ literal '\n')
 \end{verbatim}
 
-So what we want to throw away are comments and whitespace; and let's throw them 
-away after every token, using a combinator which first parses a token, and then
-throws away junk:
+We want to throw away comments and whitespace, and let's throw them away after 
+every token.  Let's do that using a combinator which first parses a token, and 
+then throws away junk:
 \begin{verbatim}
 junk = many0 (whitespace <|> comment) 
 
 tok p = p <* junk
-\end{verbatim}
-
-Here are these three parsers in action:
-\begin{verbatim}
-*Main> runParser whitespace "\n \t   \tabc"
-Just ("\n \t   \t","abc")
-
-*Main> runParser whitespace "abc"
-Nothing
-
-*Main> runParser comment ";123  \t\nabc"
-Just (";123  \t","\nabc")
-
-*Main> runParser (munch $ literal 'a') "abc"
-Just ('a',"bc")
-
-*Main> runParser (munch $ literal 'a') ";comment!\n   abc"
-Just ('a',"bc")
-
-*Main> runParser (munch $ literal 'a') ";comment!\n   bca"
-Nothing
-
-*Main> runParser (munch $ literal 'a') "bca"
-Nothing
 \end{verbatim}
 
 The comment parser uses a new combinator, \verb+not1+, built out of a 
@@ -493,53 +468,47 @@ not1 :: (MonadState [t] m, Alternative m, Switch m) => m a -> m t
 not1 p = switch p *> item
 \end{verbatim}
 
-With \verb+munch+ in hand, we fix \verb+opencurly+ and try it out:
+With \verb+tok+ in hand, we fix \verb+opencurly+ and try it out:
 \begin{verbatim}
-opencurly = munch $ literal '{'
+opencurly = tok $ literal '{'
 
-*Main> runParser opencurly ";abc\n{def"
-Just ('{', "def")
-
-*Main> runParser opencurly "{def"
+*Main> runParser opencurly "{;abc\ndef"
 Just ('{', "def")
 
 *Main> runParser opencurly "(def"
 Nothing
-
-*Main> runParser opencurly "}def"
-Nothing
 \end{verbatim}
 
-Excellent!  The \verb+opencurly+ parser correctly throws away whitespace 
-and comments and succeeds, consuming one character, when the first non-junk 
-character is an open curly brace, failing otherwise.
+Excellent!  The \verb+opencurly+ parser matches an open curly brace, failing
+otherwise, and discard trailing whitespace and comments.
 
 It's straightforward to define parsers for the other three brace tokens:
 \begin{verbatim}
-closecurly = munch $ literal '}'
-openparen  = munch $ literal '('
-closeparen = munch $ literal ')'
+closecurly = tok $ literal '}'
+openparen  = tok $ literal '('
+closeparen = tok $ literal ')'
 \end{verbatim}
 
 The parser for our last token, Symbol, is more complicated because any number of
-alphabetical characters is valid.  We'll use \verb+satisfy+ and an appropriate
+alphabetical characters is valid.  We'll use \verb+satisfy+ and a
 predicate to check that a character is valid, and \verb+many1+ to 
-match any positive number of valid characters:
+match one or more valid characters:
 \begin{verbatim}
-symbol = munch $ many1 char
+symbol = tok $ many1 char
   where char = satisfy (flip elem (['a' .. 'z'] ++ ['A' .. 'Z']))
 
 *Main> runParser symbol "abc123"
 Just ("abc","123")
 
-*Main> runParser symbol ";sdfasdfsa\n  abc123"
+*Main> runParser symbol "abc;sdfasdfsa\n  123"
 Just ("abc","123")
 
-*Main> runParser symbol ";sdfasdfsa\n  123abc"
+*Main> runParser symbol "123;sdfasdfsa\n  abc"
 Nothing
 \end{verbatim}
 
-Note that we're again using \verb+munch+ to throw away leading junk.
+Note that we again use \verb+tok+ to throw away trailing junk.
+
 
 \subsection{Syntactic structures}
 Whereas our token parsers dealt with the syntactic primitives of the Woof grammar, 
@@ -571,16 +540,20 @@ Just (3,"")
 Just (3,"abc")
 \end{verbatim}
 
-Next, we move on to \verb+define+.
-A straightforward translation from the grammar produces:
+Next, we move on to the special forms.  All special forms are delimited with
+curly braces, and lambda and define are our special forms, so we have:
+
+\begin{verbatim}
+special = opencurly *> (define <|> lambda) <* closecurly
+\end{verbatim}
+
+A straightforward translation of define from the grammar produces:
 \begin{verbatim}
 define =
-    opencurly                    *>
     check (== "define") symbol   *>
     pure ADefine                <*>
     symbol                      <*>
-    form                        <*
-    closecurly
+    form
 \end{verbatim}
 
 On to Lambda!  Not only does Lambda have additional syntax with its parameter 
@@ -588,27 +561,23 @@ list, but we also need to ensure that the parameter names are unique.  We can
 do that using the \verb+check+ combinator again:
 \begin{verbatim}
 lambda = 
-    opencurly                       *>
     check (== "lambda") symbol      *>
     opencurly                       *>
     pure ALambda                   <*>
     check distinct (many0 symbol)  <*>
     (closecurly                     *>
-     many1 form                    <*
-     closecurly)
+     many1 form)
   where
     distinct names = length names == length (nub names)
 \end{verbatim}
+
 If the symbols are distinct, the parameter list subparser will succeed,
 whereas if there's a repeated symbol, it will fail.
 
+
 \subsection{Finishing touches}
-All we have left to do are the \verb+special+, \verb+form+ (which 
-we've already used to build the previous parsers), and \verb+woof+ parsers.  
-The special parser is simple -- it parses either define or lambda:
-\begin{verbatim}
-special = define <+> lambda
-\end{verbatim}
+All we have left to do are \verb+form+ (which we've already used recursively
+to build the previous parsers) and \verb+woof+.  
 
 A form is either a symbol, application, or a special form.  We could just write:
 \begin{verbatim}
@@ -626,17 +595,19 @@ The final parser, \verb+woof+, needs to not only parse all the forms, but also
 make sure that the entire input is consumed.  The end of input check is done 
 with the \verb+end+ parser:
 \begin{verbatim}
-end = switch item
+endCheck = switch item
 \end{verbatim}
 
-We also need to munch any trailing comments and whitespace -- otherwise \verb+end+
-would fail -- so the final Woof parser is:
+We also need to discard leading comments and whitespace, so the final Woof 
+parser is:
 \begin{verbatim}
-woof = many1 form <* munch end
+woof = junk *> many0 form <* endCheck
 \end{verbatim}
+
 
 \subsection{Examples}
-Let's look at a few examples of our parser in action:
+Let's look at a few examples of our parser in action.  Here are a couple of
+successful examples:
 \begin{verbatim}
 *Main> runParser woof "; \n   {lambda {x y z} a b (c b a)}end"
 Just ([ALambda ["x","y","z"] 
@@ -653,12 +624,16 @@ Just ([ASymbol "a",
        ASymbol "b",
        ASymbol "c",
        ADefine "q" (AApp (ASymbol "f") [ASymbol "x"])],"")
+\end{verbatim}
 
+And a failing one:
+\begin{verbatim}
 *Main> runParser woof "a b c {define q (f x)},"
 Nothing
 \end{verbatim}
-Note that the first two parses consume the entire input, while the last one 
-fails because it doesn't recognize the trailing comma.
+
+Note that while the first two parses consume the entire input, while the last 
+one fails because it doesn't recognize the trailing comma.
 
 
 
@@ -676,15 +651,15 @@ with the error messages that should be reported:
   \item application: missing close parenthesis:  \begin{verbatim}(a b\end{verbatim}
   \item define: missing symbol:  \begin{verbatim}{define (a b c)}\end{verbatim}
   \item define: missing form:  \begin{verbatim}{define a}\end{verbatim}
-  \item define: missing close curly:  \begin{verbatim}{define a b\end{verbatim}
   \item lambda: missing parameter list:  \begin{verbatim}{lambda (a b c)}\end{verbatim}
   \item lambda: duplicate parameter names:  \begin{verbatim}{lambda {a b a} (c d)}\end{verbatim}
   \item lambda: missing parameter list close curly:  \begin{verbatim}{lambda {a b (c d)}\end{verbatim}
   \item lambda: missing body form:  \begin{verbatim}{lambda {a b}}\end{verbatim}
-  \item lambda: missing close curly:  \begin{verbatim}{lambda {a b} (c d)\end{verbatim}
   \item special form: unable to parse:  \begin{verbatim}{defin x y}\end{verbatim}
+  \item special form: missing close curly:  \begin{verbatim}{define x y\end{verbatim}
   \item woof: unparsed input:  \begin{verbatim}a,b\end{verbatim}
 \end{itemize}
+
 To allow error reporting in our parsers, we first need to extend our monad stack, 
 adding in a layer for errors.  We'll use a second monad transformer type class 
 -- MonadError, replace the Maybe layer with its corresponding transformer datatype 
@@ -705,7 +680,8 @@ parse that succeeds.  However, an error means that an unrecoverable problem
 has been found and that parsing should immediately stop; the parser will
 not be able to recover, even if there are alternatives since backtracking
 will not be performed.
-\EZY{Question a reader might have: what is the difference between failure and error?  You give a little guidance later but give some intuition now!}
+\EZY{Question a reader might have: what is the difference between failure and error?  
+You give a little guidance later but give some intuition now!}
 Note that successful and failing parses are wrapped in an additional \verb+Right+
 constructor:
 \begin{verbatim}
@@ -728,8 +704,10 @@ Right (Just ('b',"abc"))
 *Main> runParser (throwError "no!" <|> satisfy (== 'b')) "babc"
 Left "no!"
 \end{verbatim}
+
 We'll take advantage of this backtracking restriction to produce accurate error
 messages.
+
 
 \subsection{Type Class Preliminaries}
 Unfortunately, the standard MonadError instance for the \verb+Either+ datatype does
@@ -783,12 +761,11 @@ eAppOper    =  "application: missing operator"
 eAppClose   =  "application: missing close parenthesis"
 eDefSym     =  "define: missing symbol"
 eDefForm    =  "define: missing form"
-eDefClose   =  "define: missing close curly"
 eLamParam   =  "lambda: missing parameter list"
 eLamDupe    =  "lambda: duplicate parameter names"
 eLamPClose  =  "lambda: missing parameter list close curly"
 eLamBody    =  "lambda: missing body form"
-eLamClose   =  "lambda: missing close curly"
+eSpecClose  =  "special form: missing close curly"
 eSpecial    =  "special form: unable to parse"
 eWoof       =  "woof: unparsed input"
 \end{verbatim}
@@ -818,11 +795,10 @@ combinator of \cite{hutton1992higher}.
 What data do we want to include in our errors?  A String describing the error 
 and a token reporting the position will do:
 \begin{verbatim}
-type Error = (String, Token)
+type Error = String
 \end{verbatim}
 
-Now let's start with \verb+application+ as our first modified, error-reporting 
-parser:
+We'll first add error-reporting to \verb+application+:
 \begin{verbatim}
 application =
     openparen                     >>
@@ -857,8 +833,7 @@ define =
     check (== "define") symbol    *>
     pure ADefine                 <*>
     commit eDefSym symbol        <*>
-    commit eDefForm form         <*
-    commit eDefClose closecurly
+    commit eDefForm form
     
 lambda =
     check (== "lambda") symbol       >>
@@ -869,8 +844,7 @@ lambda =
         else throwError eLamDupe)    >>
     commit eLamPClose closecurly     >>
     commit eLamBody (many1 form)     >>= \bodies ->
-    return (ALambda params bodies)   <*
-    commit eLamClose closecurly  
+    return (ALambda params bodies)
   where
     distinct names = length names == length (nub names)
 \end{verbatim}
@@ -892,7 +866,7 @@ special form can be parsed.  We extend the \verb+special+
 parser to report an error if it matches an open brace but not define or lambda:
 \begin{verbatim}
 special = 
-    opencurly  *>  commit eSpecial (define <|> lambda)
+    opencurly  *>  commit eSpecial (define <|> lambda)  <*  commit eSpecClose closecurly
 \end{verbatim}
 
 The \verb+form+ parser doesn't have to be changed:
@@ -901,18 +875,11 @@ form = fmap ASymbol symbol <+> application <+> special
 \end{verbatim}
 
 When we can no longer parse any forms, instead of failing, we'd like to report 
-an error if there's any input left, and otherwise succeed.  Our ending parser
-must first munch any leading whitespace or comments, as usual, and then check 
-whether there are any characters left; if there are, it should report an error:
+an error if there's any input left, and otherwise succeed:
 \begin{verbatim}
-endCheck = 
-    many0 (whitespace <|> comment) *>
-    switch item
+woof = junk *> many0 form <* commit eWoof endCheck
 \end{verbatim}
-The \verb+woof+ parser uses \verb+endCheck+ after consuming all possible forms:
-\begin{verbatim}
-woof = many0 form <* commit eWoof endCheck
-\end{verbatim}
+
 
 \subsection{Error messages:  examples}
 While correct input is still parsed successfully:
@@ -941,9 +908,10 @@ And so on.
 
 \section{Example 3: reporting position}
 
-Knowing that a close-parenthesis is missing, somewhere deep inside a nested mess
+Knowing that a close-parenthesis is missing somewhere deep inside a nested mess
 of forms isn't very helpful -- you also want to know where it happened.  Let's 
 add that to our parser.
+
 
 \subsection{Parser type}
 
