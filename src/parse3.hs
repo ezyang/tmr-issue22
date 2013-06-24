@@ -77,6 +77,9 @@ instance Functor m => Switch (MaybeT m) where
 not1 :: Parser Char a -> Parser Char Char
 not1 p = switch p *> item
 
+end :: Parser Char ()
+end = switch item
+
 
 class Monad m => MonadError e m | m -> e where
   throwError :: e -> m a
@@ -163,13 +166,13 @@ application =
     many0 form                    >>= \args ->
     cut eAppClose closeparen      >>
     return (AApp op args)
-    
+
 define =
-    check (== "define") symbol    >>
-    cut eDefSym symbol            >>= \s ->
-    cut eDefForm form             >>= \f ->
-    return (ADefine s f)
-    
+    check (== "define") symbol    *>
+    pure ADefine                 <*>
+    cut eDefSym symbol           <*>
+    cut eDefForm form
+
 lambda =
     check (== "lambda") symbol     >>
     cut eLamParam opencurly        >>
@@ -188,6 +191,4 @@ special =
 
 form = fmap ASymbol symbol <|> application <|> special
 
-endCheck = switch item
-
-woof = junk *> many0 form <* cut eWoof endCheck
+woof = junk *> many0 form <* cut eWoof end

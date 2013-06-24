@@ -115,9 +115,7 @@ special = opencurly *> (define <|> lambda) <* closecurly
 
 form = fmap ASymbol symbol <|> application <|> special
 
-endCheck = switch item
-
-woof = junk *> many0 form <* endCheck
+woof = junk *> many0 form <* end
 
 test = runParser woof example == r
   where r = Just ([ADefine "f" (ALambda ["x","y"] [AApp (ASymbol "plus") [ASymbol "x",ASymbol "y"]]),

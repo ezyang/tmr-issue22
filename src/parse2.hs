@@ -165,7 +165,5 @@ special =
 
 form = fmap ASymbol symbol <|> application <|> special
 
-endCheck = switch item
-
 woof :: Parser String Char [AST]
-woof = junk *> many0 form <* commit eWoof endCheck
+woof = junk *> many0 form <* commit eWoof end
