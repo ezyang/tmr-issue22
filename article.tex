@@ -1170,16 +1170,22 @@ at all from one version to the next (although some of their types did change).
 
 
 \Section{Parsec comparison}
-A quick word about Parsec \cite{leijen}, an important, battle-tested parser 
-combinator library for Haskell.
+A quick word about Parsec \cite{leijen}, a popular and battle-tested parser 
+combinator library for Haskell:
 
-One major difference between the approach I've described and Parsec's approach
-is with respect to backtracking and error-reporting.  Parsec's default is 
-predictive parsing using a single token of lookahead for efficiency.  This can
-be changed using its \verb+try+ combinator.
+The approach I've described differs from Parsec's approach with respect to 
+backtracking and error-reporting.  By default, Parsec generates LL(1) parsers --
+this means it uses predictive parsing with only a single token of lookahead.  This
+is useful for both efficiency and better error reporting.  However, often a 
+single token is not enough to unambiguously determine what rule should be tried;
+for these cases, one must use its \verb+try+ combinator.  It is up to the
+programmer to determine when it's necessary to add \verb+try+ to a parser
+implementation.
 
-On the other hand, my approach by default uses unlimited lookahead, which can 
-be modified using the \verb+throwError+ and \verb+commit+ combinators.
+On the other hand, my approach by default uses unlimited lookahead; it also 
+doesn't automatically generate meaningful errors.  It is up to the programmer 
+to generate useful errors using the \verb+throwError+ and \verb+commit+ 
+combinators.
 
 
 
