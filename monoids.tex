@@ -62,9 +62,9 @@ Each task $t_i$ has some associated time it will take to complete it.
 The goal is to assign the tasks to processors so as to complete the tasks as quickly as possible.
 
 The \prob{Scheduling} problem is shown graphically in Figure \ref{fig:scheduling}.
-Processors are drawn as bins (labeled $b_1 ... b_4$), and tasks are drawn as green blocks (labeled $t_1 ... t_{10}$) and placed inside a bin.
-The height of the task $t_i$ represents the length of time required to process that task.
-Our goal is to minimize the \textcolor{red}{red} processing time.
+Processors are drawn as bins, and tasks are drawn as green blocks inside the bins.
+The height of each task represents the length of time required to process it.
+Our goal is to minimize the \textcolor{red}{processing time} given a fixed \textcolor{blue}{number of processors}.
 
 \begin{figure}[H]
 \centering
@@ -111,7 +111,7 @@ Then, the problem is to find a way to divvy up the students so that the sum of g
 We'll see some code for solving this problem in a bit.
 
 There is another closely related problem called \prob{BinPacking} that is easily confused with \prob{Scheduling}.
-In \prob{BinPacking}, instead of fixing the number of bins and minimizing the amount in the bins, we fix the capacity of each bin and minimize the total number of bins used.
+In \prob{BinPacking}, instead of fixing the number of bins and minimizing the amount in the bins, we fix the \textcolor{blue}{bin size} and minimize the total \textcolor{red}{number of bins} used.
 Compare Figure \ref{fig:binpacking} below and Figure \ref{fig:scheduling} above to see the difference.
 The \prob{BinPacking} problem was originally studied by shipping companies, although like \prob{Sheduling} it occurs in many domains.
 % The original motivation for the \prob{BinPacking} problem was in shipping.
@@ -159,8 +159,8 @@ The \prob{BinPacking} problem was originally studied by shipping companies, alth
 
 Both \prob{Scheduling} and \prob{BinPacking} are \np-complete.
 % Since \prob{Scheduling} is \np-complete, finding an exact solution takes exponential time.  
-Therefore, I had no chance of creating an optimal grouping for my professor---the class had 100 students, and $2^{100}$ is a \textit{big} number! \EZY{Well, it's not at all clear that a SAT solver wouldn't be able to find some sort of interesting structure in your problem domain which lets it find the optimal grouping! But yes, the brute force solution is infeasible.}
-As a result, I turned to approximation algorithms.
+Therefore, I had no chance of creating an optimal grouping for my professor---the class had 100 students, and $2^{100}$ is a \textit{big} number! %\%EZY{Well, it's not at all clear that a SAT solver wouldn't be able to find some sort of interesting structure in your problem domain which lets it find the optimal grouping! But yes, the brute force solution is infeasible.}
+So I turned to approximation algorithms.
 % These algorithms give us solutions that are guaranteed to be within a certain factor of optimal.
 One popular approximation for \prob{Scheduling} is called Longest Processing Time First (LPTF).
 When analyzing these approximation algorithms, it is customary to compare the quality of their result with that of the theoretical optimal result.
@@ -172,7 +172,8 @@ $$
 $$
 This bound was proven in the late 1960's, but the original paper remains quite readable today \cite{graham69}.
 % For a survey on variants of the Scheduling problem, see Chapter 1 of \textit{Approximation Algorithms for NP Hard Problems} \cite{hochbaum96scheduling}.
-By making this small sacrifice in accuracy, we get an algorithm that runs in time $\Theta(n\log n)$ instead of $\Theta(2^n)$.  Much better!  In the rest of this article, we'll take a detailed look at a Haskell implementation of the LPTF algorithm, and then briefly use similar techniques to solve the \prob{BinPacking} problem.
+By making this small sacrifice in accuracy, we get an algorithm that runs in time $\Theta(n\log n)$ instead of $\Theta(2^n)$.  Much better!  
+In the rest of this article, we'll take a detailed look at a Haskell implementation of the LPTF algorithm, and then briefly use similar techniques to solve the \prob{BinPacking} problem.
 
 \section{The Scheduling HomTrainer}
 
@@ -182,11 +183,10 @@ LPTF takes a collection of tasks and produces a schedule, so it's type might loo
 \begin{spec}
 :: [Task] -> Schedule
 \end{spec}
-Any time I see see a function of this form, I ask myself, ``Can it be implemented using the \h{HomTrainer} type class?'' \EZY{HomTrainer is not in the base library, so it's worth mentioning where you can get it from.  You did say so in the abstract (it's HLearn), but it's worth repeating here, with a cite.}
+Anytime I see see a function of this form, I ask myself, ``Can it be implemented using HLearn's \h{HomTrainer} type class?'' %\EZY{HomTrainer is not in the base library, so it's worth mentioning where you can get it from.  You did say so in the abstract (it's HLearn), but it's worth repeating here, with a cite.}
+%(This class can be found in the \h{HLearn} library \cite{hlearn}.)
 \h{HomTrainer}s are useful because the compiler automatically derives online and parallel algorithms for all instances.
-For LPTF, the answer is ``yes.''
-This section will cover what exactly that means.
-
+In this section, we'll get a big picture view of how this class will help us solve the \prob{Scheduling} problem.
 We start by looking at the format of a \h{HomTrainer} instance as shown graphically in Figure \ref{fig:HomTrainer} below.
 
 \begin{figure}[H]
@@ -257,25 +257,22 @@ instance Monoid [a] where
     mempty = []
     mappend = ++
 \end{spec}
-Vectors have a similar definition, and both lists and vectors are examples of free monoids.
-\EZY{This is a funny claim to make. The conventional definition of a vector is an nat-indexed
-data type, i.e. the fixed sized lists.  So if you try to define a Monoid instance on them,
-you'll find that you can't get the types to line up, because the size changes when you append.
-You could say, ``Well, these are vectors where the size is unknown'', but that is isomorphic
-to list, so there's no point in mentioning them.}
-Free monoids are monoids that can be generated by some underlying set.
-In our monoid instance for lists above, the underlying set is the type variable \h{a}.
-For the \h{HomTrainer}, when we say that our data set must be a free monoid, all we mean is that it is a collection of some data points
-(\eg\ a list of tasks).
+%Vectors have a similar definition, and both lists and vectors are examples of free monoids.
+Lists are an example of free monoids because they can be generated by any underlying type.
+%In our monoid instance for lists above, the underlying set is the type variable \h{a}.
+For the \h{HomTrainer}, when we say that our data set must be a free monoid, all we mean is that it is a collection of some data points.
+%(\eg\ a list of tasks).
+For the \prob{Scheduling} problem, it is just a list of tasks.
 
-A homomorphism from the free monoid is a function that ``preserves the free monoid's structure.'' \EZY{Well, you can have a monoid homomorphism between two monoids which are not free; the point of being a free monoid is that there \emph{always} exists a monoid homomorphism to any other monoid.}
+A homomorphism from the free monoid is a function that ``preserves the free monoid's structure.'' %\EZY{Well, you can have a monoid homomorphism between two monoids which are not free; the point of being a free monoid is that there \emph{always} exists a monoid homomorphism to any other monoid.}
 More formally, if the function is called \h{train}, then it obeys the law that for all \lstinline{xs} and \lstinline{ys} of type \lstinline{[a]}:
 \begin{spec}
 train (xs ++ ys) = (train xs) <> (train ys)
 \end{spec}
 The LPTF algorithm turns out to have this property.
 Figure \ref{fig:LPTF-monoid} shows this in picture form with a commutative diagram.
-This means that it doesn't matter whether we take the orange path (first train schedules from our data sets, then combine the schedules with \h{mappend}) or the purple path (first concatenate our data sets, then train a schedule on the result).
+\definecolor{darkorange}{RGB}{127,63,0}
+This means that it doesn't matter whether we take the \textbf{\textcolor{orange}{orange}} path (first train schedules from our data sets, then combine the schedules with \h{mappend}) or the \textbf{\textcolor{purple}{purple}} path (first concatenate our data sets, then train a schedule on the result).
 Either way, we get the exact same answer.
 
 \begin{figure}[H]
@@ -452,10 +449,12 @@ parallel :: (...) =>
 takes a batch trainer as input and returns a parallelized one as output.
 In the next section, we'll see an example of its use in practice.
 
-\EZY{At the beginning of this section, you said ``Anytime I see see a function of this form, I ask myself, “Can it be implemented
-using the HomTrainer type class?” HomTrainers are useful because the compiler
-automatically derives online and parallel algorithms for all instances. For LPTF,
-the answer is “yes.” This section will cover what exactly that means.''  I have reached the end of the section. Is the question answered? Maybe you should recapitulate.}
+%\EZY{At the beginning of this section, you said ``Anytime I see see a function of this form, I ask myself, “Can it be implemented
+%using the HomTrainer type class?” HomTrainers are useful because the compiler
+%automatically derives online and parallel algorithms for all instances. For LPTF,
+%the answer is “yes.” This section will cover what exactly that means.''  I have reached the end of the section. Is the question answered? Maybe you should recapitulate.}
+
+% Mike: Hopefully this is fixed by rewording the beginning part.
 
 \begin{figure}
 \caption{The \h{HomTrainer} type class}
@@ -482,7 +481,8 @@ class (Monoid model) => HomTrainer model where
 
 \section {Using the Scheduling HomTrainer}
 
-\EZY{I think it would be clearer if you split up the code fragment and interspersed it with the commentary. That way, the reader doesn't have to continually flip back and forth.}
+%\EZY{I think it would be clearer if you split up the code fragment and interspersed it with the commentary. That way, the reader doesn't have to continually flip back and forth.}
+% Mike: I agree, but I can't figure out a way to do that that makes it clear what code is actually in the file and what code is just library code that I'm presenting.
 
 Before we look at implementing a \h{HomTrainer} to solve \prob{Scheduling}, we'll take a look at how it's used.
 In particular, we'll look at the Haskell code I used to solve the problem of grouping my students.
@@ -517,7 +517,8 @@ instance (Norm a,...) => HomTrainer (Scheduling n a) where
 \end{lstlisting}
 We have a constraint on our task parameter specifying that it must be an instance of \h{Norm}.
 What does that mean?
-In mathematics, a type has a norm if it has a ``size'' of some sort. \EZY{The laws the norm must obey are not too hard to state, maybe mention them briefly?}
+In mathematics, a type has a norm if it has a ``size'' of some sort. %\EZY{The laws the norm must obey are not too hard to state, maybe mention them briefly?}
+% Mike: I didn't mention them because they require talking about vector spaces, which I think would complicate the discussion needlessly.
 In HLearn, the \h{Norm} type class is defined in two parts.
 First we associate a specific number type with our model using the \h{HasRing} type class.
 Then, the \h{Norm} type class defines a function \h{magnitude} that converts a model into the number type.
@@ -542,7 +543,7 @@ First, we load a CSV file into a variable
 % \begin{spec}
 % allStudents::[Student]
 % \end{spec}
-using the \h{Cassava} package.\EZY{cite?}
+using the \h{Cassava} package \cite{cassava}.
 The details of how this works aren't too important.
 
 In the middle section, we divide up the students according to which section they are in, and then \h{train} a \h{Schedule} model for each section.
@@ -624,7 +625,7 @@ data Scheduling (p::Nat) a = Scheduling
     }
 \end{spec}
 Scheduling has two member variables.
-The first is a \h{SortedVector}. \EZY{Is this why you said vectors form a free monoid? This is not the monoid you are looking.}
+The first is a \h{SortedVector}. %\EZY{Is this why you said vectors form a free monoid? This is not the monoid you are looking.}
 This custom data type is a wrapper around the \h{vector} package's \h{Vector} type that maintains the invariant that items are always sorted.
 This vector will be used as an intermediate data structure while performing the LPTF computations.
 The second member is the actual schedule.
@@ -935,15 +936,15 @@ The commutative diagram for \h{SortedVector} is shown in Figure \ref{fig:SortedV
 
 It is important to note that \h{SortedVector}'s \h{mappend} operation does not take constant time.
 In fact, it takes $\Theta(n)$ time, where $n$ is the size of both input vectors put together.
-The \h{HomTrainer} type class can handle these non-constant \h{mappend} operations elegantly.
-\EZY{I do not know what you mean here. Do you mean, using standard techniques for solving
-recurrences, we can still calculate the new runtime?}
-By looking up in Table \ref{table:rt}, we can see the run times of the derived algorithms.
+The \h{HomTrainer} type class makes reasoning about these non-constant \h{mappend} operations easy.
+%\EZY{I do not know what you mean here. Do you mean, using standard techniques for solving
+%recurrences, we can still calculate the new runtime?}
+By looking up in Table \ref{table:rt}, we can find the run times of the derived algorithms.
 Notice that if the monoid operation takes time $\Theta(n)$, then our batch trainer will take time $\Theta(n\log n)$, and this is exactly what we would expect for a sorting.
 Details of how these numbers were derived can be found in my TFP13 submission on the HLearn library \cite{me_tfp13}.
 
 \begin{table}[H]
-\caption{Given a run time for \h{mappend}, you can calculate the run time of the automatically generated functions using this table.}
+\caption{Given a run time for \h{mappend}, you can calculate the run time of the automatically generated functions using this table.  The variable $n$ is the total number of data points being trained on or combined, and the variable $p$ is the number of processors available.}
 \label{table:rt}
 % \centering
 \hspace{-0.3in}
@@ -953,7 +954,7 @@ Monoid operation & Sequential batch trainer & \ \ Parallel batch trainer\ \ & On
 \mbox{(\h{mappend})} & \mbox{(\h{train})} & \mbox{(\h{parallel train})} & \mbox{(\h{add1dp})}\\
 \hline \hline
 $\Theta(1)$ & $\Theta(n)$ & $\Theta\left(\frac{n}{p}+\log p\right)$ & $\Theta(1)$ \\
-$\Theta(\log^a n)$, $a>0$ & $\Theta(n)$ & $\Theta\left(\frac{n}{p}+(\log^a n)(\log p)\right)$ & $\Theta(\log^a n)$ \\
+$\Theta(\log n)$ & $\Theta(n)$ & $\Theta\left(\frac{n}{p}+(\log n)(\log p)\right)$ & $\Theta(\log n)$ \\
 $\Theta(n)$ & $\Theta(n\log n)$ & $\Theta\left(\frac{n}{p}\log\frac{n}{p}+n\right)$ & $\Theta(n)$ \\
 $\Theta(n^b)$, $b>1$ & $\Theta(n^b)$ & no improvement & no improvement\\
 \hline
