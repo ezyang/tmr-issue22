@@ -967,12 +967,76 @@ item = basic_item >>= \x -> updateState (f x) >> pure x
 For simplicity, only '\n' characters will count as newlines; every other character,
 including tabs, will count as a single column on the same line.
 
-\subsection{}
+
+\subsection{Position reporting}
+To actually report the position when an error is detected, we introduce a new 
+combinator, which I'll call \verb+cut+:
+\Matt{a horrible name}
+\begin{verbatim}
+cut :: String -> Parser Char a -> Parser Char a
+cut message parser = 
+    getState >>= \p ->
+    commit (message, p) parser
+\end{verbatim}
+
+It checks the current position, runs a parser, and if the parser fails, reports
+an error consiting of a message and the position.
+
+To take advantage of this combinator, we essentially replace every use of 
+\verb+commit+ with \verb+cut+:
+\begin{verbatim}
+application =
+    openparen                     >>
+    cut eAppOper form             >>= \op ->
+    many0 form                    >>= \args ->
+    cut eAppClose closeparen      >>
+    return (AApp op args)
+
+define =
+    check (== "define") symbol    *>
+    pure ADefine                 <*>
+    cut eDefSym symbol           <*>
+    cut eDefForm form
+
+lambda =
+    check (== "lambda") symbol     >>
+    cut eLamParam opencurly        >>
+    many0 symbol                   >>= \params ->
+    (if distinct params 
+        then return ()
+        else cut eLamDupe empty)      >>
+    cut eLamPClose closecurly         >>
+    cut eLamBody (many1 form)         >>= \bodies ->
+    return (ALambda params bodies)
+  where
+    distinct names = length names == length (nub names)
+
+special = 
+    opencurly  *>  cut eSpecial (define <|> lambda)  <*  cut eSpecClose closecurly
+
+form = fmap ASymbol symbol <|> application <|> special
+
+woof = junk *> many0 form <* cut eWoof end
+\end{verbatim}
+
+Now the parsers report useful errors:
+\begin{verbatim}
+*Main> runParser woof " abc 123 "
+Left ("woof: unparsed input",(1,6))
+
+*Main> runParser woof " (((abc ())) "
+Left ("application: missing operator",(1,10))
+
+*Main> runParser woof "{define const \n  {lambda {x x} \n   x}"
+Left ("lambda: duplicate parameter names",(2,15))
+\end{verbatim}
 
 
 
 
-\Red{It's worth noting that up until this point, we haven't talked about how transformers contribute to the design of the parser library.  Maybe give the juicy bits earlier.}
+\Red{It's worth noting that up until this point, 
+we haven't talked about how transformers contribute to the design of the parser library.  
+Maybe give the juicy bits earlier.}
 
 \section{Stack Order}
 While the contents of a transformer stack is important, the order of the
@@ -1101,6 +1165,21 @@ This emphasizes some major advantages of using monad transformers:
 
 We benefitted from these advantages when many of the parsers didn't have to change 
 at all from one version to the next (although some of their types did change).
+
+
+
+
+\Section{Parsec comparison}
+A quick word about Parsec \cite{leijen}, an important, battle-tested parser 
+combinator library for Haskell.
+
+One major difference between the approach I've described and Parsec's approach
+is with respect to backtracking and error-reporting.  Parsec's default is 
+predictive parsing using a single token of lookahead for efficiency.  This can
+be changed using its \verb+try+ combinator.
+
+On the other hand, my approach by default uses unlimited lookahead, which can 
+be modified using the \verb+throwError+ and \verb+commit+ combinators.
 
 
 
