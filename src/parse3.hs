@@ -77,6 +77,9 @@ instance Functor m => Switch (MaybeT m) where
 not1 :: Parser Char a -> Parser Char Char
 not1 p = switch p *> item
 
+end :: Parser Char ()
+end = switch item
+
 
 class Monad m => MonadError e m | m -> e where
   throwError :: e -> m a
@@ -142,62 +145,50 @@ eAppOper    =  "application: missing operator"
 eAppClose   =  "application: missing close parenthesis"
 eDefSym     =  "define: missing symbol"
 eDefForm    =  "define: missing form"
-eDefClose   =  "define: missing close curly"
 eLamParam   =  "lambda: missing parameter list"
 eLamDupe    =  "lambda: duplicate parameter names"
 eLamPClose  =  "lambda: missing parameter list close curly"
 eLamBody    =  "lambda: missing body form"
-eLamClose   =  "lambda: missing close curly"
+eSpecClose  =  "special form: missing close curly"
 eSpecial    =  "special form: unable to parse"
 eWoof       =  "woof: unparsed input"
--- other possibilities:  non-symbol in parameter list
+
+
+cut :: String -> Parser Char a -> Parser Char a
+cut message parser = 
+    getState >>= \p ->
+    commit (message, p) parser
+
 
 application =
-    openparen                           >>
-    getState                            >>= \p1 -> 
-    commit (eAppOper, p1) form          >>= \op ->
-    many0 form                          >>= \args ->
-    getState                            >>= \p2 ->
-    commit (eAppClose, p2) closeparen   >>
+    openparen                     >>
+    cut eAppOper form             >>= \op ->
+    many0 form                    >>= \args ->
+    cut eAppClose closeparen      >>
     return (AApp op args)
-    
+
 define =
-    check (== "define") symbol          >>
-    getState                            >>= \p1 ->
-    commit (eDefSym, p1) symbol         >>= \s  ->
-    getState                            >>= \p2 ->
-    commit (eDefForm, p2) form          >>= \f  ->
-    getState                            >>= \p3 ->
-    commit (eDefClose, p3) closecurly   >>
-    return (ADefine s f)
-    
+    check (== "define") symbol    *>
+    pure ADefine                 <*>
+    cut eDefSym symbol           <*>
+    cut eDefForm form
+
 lambda =
-    check (== "lambda") symbol             >>
-    getState                               >>= \p1 ->
-    commit (eLamParam, p1) opencurly       >>
-    getState                               >>= \p2 ->
-    many0 symbol                           >>= \params ->
+    check (== "lambda") symbol     >>
+    cut eLamParam opencurly        >>
+    many0 symbol                   >>= \params ->
     (if distinct params 
         then return ()
-        else throwError (eLamDupe, p2))    >>
-    getState                               >>= \p3 ->
-    commit (eLamPClose, p3) closecurly     >>
-    getState                               >>= \p4 ->
-    commit (eLamBody, p4) (many1 form)     >>= \bodies ->
-    getState                               >>= \p5 ->
-    commit (eLamClose, p5) closecurly      >>
+        else cut eLamDupe empty)      >>
+    cut eLamPClose closecurly         >>
+    cut eLamBody (many1 form)         >>= \bodies ->
     return (ALambda params bodies)
   where
     distinct names = length names == length (nub names)
 
 special = 
-    opencurly                       *>
-    getState                       >>= \p1 ->  
-    commit (eSpecial, p1) spForm
-  where spForm = define <|> lambda
+    opencurly  *>  cut eSpecial (define <|> lambda)  <*  cut eSpecClose closecurly
 
 form = fmap ASymbol symbol <|> application <|> special
 
-endCheck = switch item
-
-woof = junk *> many0 form <* (getState >>= \p1 -> commit (eWoof, p1) endCheck)
+woof = junk *> many0 form <* cut eWoof end

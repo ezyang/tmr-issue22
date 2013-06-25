@@ -99,8 +99,7 @@ define =
     check (== "define") symbol   *>
     pure ADefine                <*>
     symbol                      <*>
-    form                        <*
-    closecurly
+    form
 
 lambda = 
     check (== "lambda") symbol      *>
@@ -108,18 +107,15 @@ lambda =
     pure ALambda                   <*>
     check distinct (many0 symbol)  <*>
     (closecurly                     *>
-     many1 form                    <*
-     closecurly)
+     many1 form)
   where
     distinct names = length names == length (nub names)
 
-special = opencurly *> (define <|> lambda)
+special = opencurly *> (define <|> lambda) <* closecurly
 
 form = fmap ASymbol symbol <|> application <|> special
 
-endCheck = switch item
-
-woof = junk *> many0 form <* endCheck
+woof = junk *> many0 form <* end
 
 test = runParser woof example == r
   where r = Just ([ADefine "f" (ALambda ["x","y"] [AApp (ASymbol "plus") [ASymbol "x",ASymbol "y"]]),

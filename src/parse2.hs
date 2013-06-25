@@ -125,15 +125,14 @@ eAppOper    =  "application: missing operator"
 eAppClose   =  "application: missing close parenthesis"
 eDefSym     =  "define: missing symbol"
 eDefForm    =  "define: missing form"
-eDefClose   =  "define: missing close curly"
 eLamParam   =  "lambda: missing parameter list"
 eLamDupe    =  "lambda: duplicate parameter names"
 eLamPClose  =  "lambda: missing parameter list close curly"
 eLamBody    =  "lambda: missing body form"
-eLamClose   =  "lambda: missing close curly"
+eSpecClose  =  "special form: missing close curly"
 eSpecial    =  "special form: unable to parse"
 eWoof       =  "woof: unparsed input"
--- other possibilities:  non-symbol in parameter list
+
 
 application =
     openparen                     >>
@@ -146,8 +145,7 @@ define =
     check (== "define") symbol    *>
     pure ADefine                 <*>
     commit eDefSym symbol        <*>
-    commit eDefForm form         <*
-    commit eDefClose closecurly
+    commit eDefForm form
     
 lambda =
     check (== "lambda") symbol       >>
@@ -158,17 +156,14 @@ lambda =
         else throwError eLamDupe)    >>
     commit eLamPClose closecurly     >>
     commit eLamBody (many1 form)     >>= \bodies ->
-    return (ALambda params bodies)   <*
-    commit eLamClose closecurly  
+    return (ALambda params bodies)
   where
     distinct names = length names == length (nub names)
 
 special = 
-    opencurly  *>  commit eSpecial (define <|> lambda)
+    opencurly  *>  commit eSpecial (define <|> lambda)  <*  commit eSpecClose closecurly
 
 form = fmap ASymbol symbol <|> application <|> special
 
-endCheck = switch item
-
 woof :: Parser String Char [AST]
-woof = junk *> many0 form <* commit eWoof endCheck
+woof = junk *> many0 form <* commit eWoof end
