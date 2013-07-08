@@ -32,14 +32,6 @@ and implementation of parsers.
 
 \section{Parser Combinators}
 
-\EZY{It's probably worth rephrasing what is stated in the abstract here,
-for those of us who are in the habit of skipping abstracts; it also helps
-build continuity.}
-\Matt{Could you give me any pointers on how to do this?  I can't figure out
-an effective way of doing it without just repeating the abstract verbatim.}
-\EZY{Hmm, I'd probably convert the abstract into the intro, and write a new,
-shorter abstract, like ``Monad transformers can be used to ...''}
-
 The goals of parsing are to: 1) decide whether a string is part of the language
 in question, and 2) build a meaningful representation of the structure of the
 parsed string.  In addition, practical parsers must recognize faulty input and
@@ -69,17 +61,6 @@ the mix.  We'll divide the library into three main pieces of the code:
 \end{itemize}
 
 \subsection{Parser datatype}
-\EZY{These sections are very terse.  If the reader is expected to already be familiar with
-most of the moving bits of a parsing library, perhaps this section can be boiled down some more.
-It is a very curious audience the current presentation targets: a reader who knows how to
-implement a parser library ``from scratch'', but doesn't know how to use
-monad transformers to build them.  Perhaps the components of this
-presentation which are key to understanding how the monad transformer works should be
-fleshed out more.}
-\Matt{Good point, I did not have a specific audience in mind.  
-The article requires familiarity with monad transformers, but I don't think it should 
-require familiarity with parser combinators.  I'll work on improving this section with
-that in mind.}
 
 Parsers operate on token sequences, consuming tokens from the front of the sequence.
 We could model this with the function type:
@@ -336,9 +317,6 @@ There are two major benefits to our parsers from using monad transformers:
 
 
 \section{Introducing Woof:  a Simple Lisp}
-
-\EZY{An alternate structure you can use here is to introduce Woof first, before talking about monad transformers.  
-After all, the example parser doesn't require you to know what is going on in transformer-land.}
 
 The simple language we'll use as a motivation for building parsers is Woof, a 
 simple dialect of Lisp.  We'll be progressively adding features to a simple 
@@ -680,8 +658,6 @@ parse that succeeds.  However, an error means that an unrecoverable problem
 has been found and that parsing should immediately stop; the parser will
 not be able to recover, even if there are alternatives since backtracking
 will not be performed.
-\EZY{Question a reader might have: what is the difference between failure and error?  
-You give a little guidance later but give some intuition now!}
 Note that successful and failing parses are wrapped in an additional \verb+Right+
 constructor:
 \begin{verbatim}
@@ -785,8 +761,6 @@ This combinator takes two arguments: an error value and a monadic
 computation.  It first tries to run the computation; if the computation 
 fails, it generates an error.  The 
 definition of 'failure' is provided by the Alternative instance of \verb+m+.
-\EZY{Give a little intuition on why the operator is called commit earlier;
-you don't get around it until later.}
 The reason for its name is that it restricts backtracking and alternatives;
 it ``commits" the parser to a do-or-die situation -- either it successfully
 parses the input, or the parsing stops.  It's based on the \verb+nofail+
@@ -850,7 +824,7 @@ lambda =
 \end{verbatim}
 
 Note that \verb+commit+ isn't used until we can be sure that we're in the right 
-rule: \EZY{Here it is}  if, in the \verb+define+ parser, we committed to parsing the ``define" 
+rule: if, in the \verb+define+ parser, we committed to parsing the ``define" 
 keyword, we wouldn't be able to backtrack and try the \verb+lambda+ parser if 
 that failed.  Thus, if errors are treated as unrecoverable, it's important not to 
 place a \verb+commit+ where backtracking might be necessary to parse a valid 
@@ -971,7 +945,6 @@ including tabs, will count as a single column on the same line.
 \subsection{Position reporting}
 To actually report the position when an error is detected, we introduce a new 
 combinator, which I'll call \verb+cut+:
-\Matt{a horrible name}
 \begin{verbatim}
 cut :: String -> Parser Char a -> Parser Char a
 cut message parser = 
@@ -1160,8 +1133,6 @@ This emphasizes some major advantages of using monad transformers:
        support many useful combinators
  \item it's easy to change the composition and order of stacks
 \end{itemize}
-
-\Matt{hmm, the last point can be a disadvantage as well}
 
 We benefitted from these advantages when many of the parsers didn't have to change 
 at all from one version to the next (although some of their types did change).
