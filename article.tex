@@ -319,9 +319,6 @@ There are two major benefits to our parsers from using monad transformers:
 
 \section{Introducing Woof:  a Simple Lisp}
 
-\EZY{An alternate structure you can use here is to introduce Woof first, before talking about monad transformers.  
-After all, the example parser doesn't require you to know what is going on in transformer-land.}
-
 The simple language we'll use as a motivation for building parsers is Woof, a 
 simple dialect of Lisp.  We'll be progressively adding features to a simple 
 initial implementation on our way to creating an error-reporting parser.
@@ -662,8 +659,6 @@ parse that succeeds.  However, an error means that an unrecoverable problem
 has been found and that parsing should immediately stop; the parser will
 not be able to recover, even if there are alternatives since backtracking
 will not be performed.
-\EZY{Question a reader might have: what is the difference between failure and error?  
-You give a little guidance later but give some intuition now!}
 Note that successful and failing parses are wrapped in an additional \verb+Right+
 constructor:
 \begin{verbatim}
@@ -767,8 +762,6 @@ This combinator takes two arguments: an error value and a monadic
 computation.  It first tries to run the computation; if the computation 
 fails, it generates an error.  The 
 definition of 'failure' is provided by the Alternative instance of \verb+m+.
-\EZY{Give a little intuition on why the operator is called commit earlier;
-you don't get around it until later.}
 The reason for its name is that it restricts backtracking and alternatives;
 it ``commits" the parser to a do-or-die situation -- either it successfully
 parses the input, or the parsing stops.  It's based on the \verb+nofail+
@@ -832,7 +825,7 @@ lambda =
 \end{verbatim}
 
 Note that \verb+commit+ isn't used until we can be sure that we're in the right 
-rule: \EZY{Here it is}  if, in the \verb+define+ parser, we committed to parsing the ``define" 
+rule: if, in the \verb+define+ parser, we committed to parsing the ``define" 
 keyword, we wouldn't be able to backtrack and try the \verb+lambda+ parser if 
 that failed.  Thus, if errors are treated as unrecoverable, it's important not to 
 place a \verb+commit+ where backtracking might be necessary to parse a valid 
@@ -953,7 +946,6 @@ including tabs, will count as a single column on the same line.
 \subsection{Position reporting}
 To actually report the position when an error is detected, we introduce a new 
 combinator, which I'll call \verb+cut+:
-\Matt{a horrible name}
 \begin{verbatim}
 cut :: String -> Parser Char a -> Parser Char a
 cut message parser = 
@@ -1142,8 +1134,6 @@ This emphasizes some major advantages of using monad transformers:
        support many useful combinators
  \item it's easy to change the composition and order of stacks
 \end{itemize}
-
-\Matt{hmm, the last point can be a disadvantage as well}
 
 We benefitted from these advantages when many of the parsers didn't have to change 
 at all from one version to the next (although some of their types did change).
