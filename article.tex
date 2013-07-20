@@ -939,7 +939,7 @@ item = basic_item >>= \x -> updateState (f x) >> pure x
         f _    (ln, c) = (ln, c + 1)
 \end{verbatim}
 
-For simplicity, only '\n' characters will count as newlines; every other character,
+For simplicity, only '\\n' characters will count as newlines; every other character,
 including tabs, will count as a single column on the same line.
 
 
@@ -1141,7 +1141,7 @@ at all from one version to the next (although some of their types did change).
 
 
 
-\Section{Parsec comparison}
+\section{Parsec comparison}
 A quick word about Parsec \cite{leijen}, a popular and battle-tested parser 
 combinator library for Haskell:
 
