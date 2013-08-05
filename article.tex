@@ -36,7 +36,7 @@ The goals of parsing are to: 1) decide whether a string is part of the language
 in question, and 2) build a meaningful representation of the structure of the
 parsed string.  In addition, practical parsers must recognize faulty input and
 accurately report the location and cause of the problem.  Thus, a parser must
-also decide what generates an error, what information is in the error, and how
+also decide what generates an error, what information is in the error and how
 error-reporting parsers compose.
 
 Parser combinators are an excellent approach for building expressive, 
@@ -49,15 +49,15 @@ and Leijen's Parsec paper \cite{leijen}.  The inspiration and many of the names
 used in this article are drawn from those references.
 
 To get a feel for what parser combinators are and how they're used to
-build parsers, we'll quickly create a minimal parser combinator library to see
-the basic principles of their design before adding monad transformers to
-the mix.  We'll divide the library into three main pieces of the code:
+build parsers, we'll first create a minimal parser combinator library.
+Next, we'll add monad transformers to the mix.  We'll divide the library
+into four main pieces:
 
 \begin{itemize}
- \item Parser datatype
- \item a primitive parser
- \item type class instances
- \item combinators
+ \item the Parser datatype,
+ \item a primitive parser,
+ \item type class instances, and
+ \item combinators.
 \end{itemize}
 
 \subsection{Parser datatype}
@@ -69,8 +69,8 @@ newtype Parser t =
     Parser {getParser :: [t] -> [t]}
 \end{verbatim}
 
-We also want parsers to return a value, if they succeed.  So let's extend the return type
-again to allow for a value, which also requires a second type parameter:
+We also want parsers to return a value, if they succeed.  To do this, we extend the return type
+to allow for a value, which also requires a second type parameter:
 \begin{verbatim}
 newtype Parser t a = 
     Parser {getParser :: [t] -> ([t], a)}
@@ -79,7 +79,7 @@ newtype Parser t a =
 However, this ignores the possibility of failure.  To allow for failure, the return value needs to
 be wrapped in a Maybe:
 \begin{verbatim}
-newtype Parser t = 
+newtype Parser t a = 
     Parser {getParser :: [t] -> Maybe ([t], a)}
 \end{verbatim}
 
@@ -115,11 +115,11 @@ instance Functor (Parser t) where
   fmap f (Parser p) = Parser (fmap (fmap f) . p)
 \end{verbatim}
 
-The \verb+<*>+ operator of Applicative runs parsers sequentially, 
+The \verb+<*>+ operator of Applicative runs parsers sequentially
 and applies the result of the first to the result of the second; it
 has to make sure that the (possibly modified) output token stream from
 the first parser is passed to the second:
-\begin{verbatim}  
+\begin{verbatim}
 import Control.Applicative  (Applicative(..))
 
 instance Applicative (Parser t) where
@@ -130,9 +130,9 @@ instance Applicative (Parser t) where
                        Just (ys, f) -> fmap (fmap f) (p2 ys)
 \end{verbatim}
 
-The Monad instance is similar to the Applicative instance, except that 
-the actual result value of the first parser is used to generate the 
-second parser; similarly to the Functor instance, this depends on 
+The Monad instance is similar to the Applicative instance, except that
+the actual result value of the first parser is used to generate the
+second parser; similarly to the Functor instance, this depends on
 instances of its underlying types:
 \begin{verbatim}
 instance Monad (Parser t) where
@@ -183,8 +183,8 @@ Nothing
 Just ("bcde",'a')
 \end{verbatim}
 
-We can run parsers in sequence using the Applicative combinators.  First one parser
-is run, then the second, and the token position is threaded between the two.
+We can run parsers in sequence using the Applicative combinators.  First, one parser
+is run, then the second is run, and the token position is threaded between the two.
 Note that both parsers must succeed in order for the combined parser to succeed:
 \begin{verbatim}
 *Main> getParser (item *> item) "abcde"
@@ -244,7 +244,7 @@ element = char <|> level
 parseNest :: Parser Char [Nesting]
 parseNest = many element
 \end{verbatim}
-Examples:
+Here are some examples of this code in action:
 \begin{verbatim}
 *Main> getParser parseNest "(((()))))"
 Just (")",[Many [Many [Many [Many []]]]])
@@ -258,7 +258,7 @@ Just ("",[Many [Many [],One 'a',One 'b',One 'c',
 *Main> getParser parseNest "(()abc(def)()"
 Just ("(()abc(def)()",[])
 \end{verbatim}
-That concludes the implementation of a simple parser.
+This concludes the implementation of a simple parser.
 In the rest of this article, we'll rework and augment these basic parser 
 combinators by generalizing the implementations and extending the result types,
 while taking advantage of monad transformers to keep them modular.
@@ -282,8 +282,8 @@ Substituting in [s] for s and Maybe for m in the right-hand side produces
 newtype StateT s a = StateT { runStateT :: [s] -> Maybe (a,[s]) }
 \end{verbatim}
 
-This is identical to the Parser type given before, except for the order 
-of the result tuple, and so we can redefine the parser type as:
+This is identical to the Parser type given before modulo the order 
+of the result tuple, so we can redefine the parser type as:
 \begin{verbatim}
 import Control.Monad.State       (StateT(..))
 
@@ -306,12 +306,13 @@ item =
 
 There are two major benefits to our parsers from using monad transformers:
 \begin{itemize}
- \item semantic building blocks -- the mtl library provides implementations
-    for Maybe, Error, and State building blocks; using these, we can describe
-    describe the semantics of our parsers, and
+ \item compositional implementation with semantic building blocks --
+    the mtl library provides implementations
+    for Maybe, Error, and State building blocks; using these, we can easily
+    describe the semantics of our parsers without writing very much code, and
  \item type class instances -- in addition to providing the building blocks,
     the mtl provides instances for common type classes, so we only have to 
-    worry about parser-specific operations.
+    implement parser-specific operations.
 \end{itemize}
 
 
@@ -319,11 +320,12 @@ There are two major benefits to our parsers from using monad transformers:
 
 \section{Introducing Woof:  a Simple Lisp}
 
-The simple language we'll use as a motivation for building parsers is Woof, a 
-simple dialect of Lisp.  We'll be progressively adding features to a simple 
+The rest of this articule will progressively adding features to a simple 
 initial implementation on our way to creating an error-reporting parser.
+The simple language we'll use as a motivation for this task is Woof, a 
+simple dialect of Lisp.
 
-The language definition in pseudo-BNF \cite{bnf} is:
+The language definition of Woof in pseudo-BNF~\cite{bnf} is:
 
 \begin{verbatim}
 Woof         :=   Form(+)
@@ -337,8 +339,8 @@ Whitespace   :=   \s+
 Comment      :=   ';'  (not '\n')(*)
 \end{verbatim}
 
-With the additional rule that whitespace and comments may appear in any 
-amount before or after tokens.  Tokens are:
+There is an additional rule that whitespace and comments may appear in any 
+amount before or after tokens.  Our tokens are:
 \begin{itemize}
   \item \verb+{+
   \item \verb+}+
@@ -353,7 +355,7 @@ amount before or after tokens.  Tokens are:
 \section{Example 1: Recognition and Tree-Building}
 
 \subsection{Preliminaries}
-Our first Woof parser will be responsible for determining whether input
+Our first Woof parser will only be responsible for determining whether an input
 text conforms to the language definition and building an 
 Abstract Syntax Tree (AST) representing the structure of the parsed input.
 Here's the AST definition we'll use:
@@ -369,7 +371,7 @@ data AST
 We'll also want a function for running our parsers, using the type given in the
 prevous section:
 \begin{verbatim}
-runParser :: Parser [t] a -> [t] -> Maybe (a, [t])
+runParser :: Parser t a -> [t] -> Maybe (a, [t])
 runParser = runStateT
 \end{verbatim}
 
@@ -388,6 +390,8 @@ Because we used MonadState's combinators to build \verb+item+, \verb+literal+
 has a slightly different type; we also take advantage of \verb+satisfy+ to 
 simplify its implementation:
 \begin{verbatim}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+
 literal :: (Eq t, MonadState [t] m, Alternative m) => t -> m t
 literal c = satisfy ((==) c)
 \end{verbatim}
@@ -404,10 +408,10 @@ It accepts open curly brackets and rejects everything else:
 [Just ('{', "abc"), Nothing, Nothing, Nothing]
 \end{verbatim}
 
-But what about the spec that said that comments and whitespace can occur 
-anywhere before or after tokens -- how should that be handled?
+Recall, however, that our specification said that comments and whitespace can occur 
+anywhere before or after tokens -- how should this be handled?
 
-First we need to define the whitespace and comment patterns -- and also rename
+First, we need to define the whitespace and comment patterns -- we'll also rename
 the \verb+some+ and \verb+many+ functions from Control.Alternative to more
 clearly indicate their semantics:
 \begin{verbatim}
@@ -418,9 +422,9 @@ whitespace = many1 $ satisfy (flip elem " \n\t\r\f")
 comment = pure (:) <*> literal ';' <*> many0 (not1 $ literal '\n')
 \end{verbatim}
 
-We want to throw away comments and whitespace, and let's throw them away after 
-every token.  Let's do that using a combinator which first parses a token, and 
-then throws away junk:
+We want to throw away comments and whitespace, and this process
+must occur after every token.  We can do this by using
+a combinator which first parses a token and then throws away junk:
 \begin{verbatim}
 junk = many0 (whitespace <|> comment) 
 
@@ -447,7 +451,7 @@ not1 :: (MonadState [t] m, Alternative m, Switch m) => m a -> m t
 not1 p = switch p *> item
 \end{verbatim}
 
-With \verb+tok+ in hand, we fix \verb+opencurly+ and try it out:
+With \verb+tok+ in hand, we can fix \verb+opencurly+:
 \begin{verbatim}
 opencurly = tok $ literal '{'
 
@@ -459,7 +463,7 @@ Nothing
 \end{verbatim}
 
 Excellent!  The \verb+opencurly+ parser matches an open curly brace, failing
-otherwise, and discard trailing whitespace and comments.
+otherwise, and discards trailing whitespace and comments.
 
 It's straightforward to define parsers for the other three brace tokens:
 \begin{verbatim}
@@ -468,7 +472,7 @@ openparen  = tok $ literal '('
 closeparen = tok $ literal ')'
 \end{verbatim}
 
-The parser for our last token, Symbol, is more complicated because any number of
+The parser for our last token, Symbol, is more complicated, as any number of
 alphabetical characters is valid.  We'll use \verb+satisfy+ and a
 predicate to check that a character is valid, and \verb+many1+ to 
 match one or more valid characters:
@@ -494,7 +498,7 @@ Whereas our token parsers dealt with the syntactic primitives of the Woof gramma
 the remaining parsers will implement grammar rules that combine the tokens
 into syntactic structures.
 
-The first combining form is function application.  The rule says that it's delimited
+The first combining form is function application.  The rule says that it is delimited
 by matching parentheses, in between which must appear one form as the operator, followed
 by any number of forms as the arguments to which the operator is applied.  We can
 say that like so:
@@ -621,7 +625,6 @@ one fails because it doesn't recognize the trailing comma.
 While our first parser worked great on valid input, it wasn't helpful
 when the input was malformed.  When the parser finds bad input, we'd like it to 
 produce an informative error, indicating what and where the problem was.  
-This allows a user to quickly find and correct problems.
 
 Let's start with an informal spec of different cases of malformed input, along 
 with the error messages that should be reported: 
@@ -652,12 +655,13 @@ runParser p xs = runMaybeT (runStateT p xs)
 \end{verbatim}
 
 While our previous parsers had two different results -- Nothing and Just --
-our new parsers have three possible results:  success, failure, and error. 
+our new parsers have three possible results:  success (Right Just), failure (Right Nothing), and error (Left).
+%% EZY
 A parse failure means that a parser wasn't able to match the input, but
 nothing bad happened; failures can be recovered from if there is an alternative
 parse that succeeds.  However, an error means that an unrecoverable problem
 has been found and that parsing should immediately stop; the parser will
-not be able to recover, even if there are alternatives since backtracking
+not be able to recover even if there are alternatives, since backtracking
 will not be performed.
 Note that successful and failing parses are wrapped in an additional \verb+Right+
 constructor:
