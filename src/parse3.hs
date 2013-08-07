@@ -1,8 +1,7 @@
 {-# LANGUAGE   NoMonomorphismRestriction
              , FlexibleContexts       
              , FlexibleInstances    
-             , FunctionalDependencies
-             , UndecidableInstances      #-}
+             , TypeFamilies      #-}
 
 import Control.Monad.State       (MonadState (..), StateT(..))
 import Control.Monad.Trans.Class (lift)
@@ -81,27 +80,31 @@ end :: Parser Char ()
 end = switch item
 
 
-class Monad m => MonadError e m | m -> e where
-  throwError :: e -> m a
-  catchError :: m a -> (e -> m a) -> m a
+class Monad m => MonadError m where
+  type Error m :: *
+  throwError :: Error m -> m a
+  catchError :: m a -> (Error m -> m a) -> m a
 
-instance MonadError e (Either e) where
+instance MonadError (Either e) where
+  type Error (Either e) = e
   throwError               =  Left
   catchError  (Right x) _  =  Right x
   catchError  (Left e)  f  =  f e
   
-instance MonadError e m => MonadError e (StateT s m) where
+instance MonadError m => MonadError (StateT s m) where
+  type Error (StateT s m) = Error m
   throwError      =  lift . throwError
   catchError m f  =  StateT g
     where
       g s = catchError (runStateT m s) 
                        (\e -> runStateT (f e) s)
 
-instance MonadError e m => MonadError e (MaybeT m) where
+instance MonadError m => MonadError (MaybeT m) where
+  type Error (MaybeT m) = Error m
   throwError      =  lift . throwError
   catchError m f  =  MaybeT $ catchError (runMaybeT m) (runMaybeT . f)
 
-commit :: (MonadError e m, Alternative m) => e -> m a -> m a
+commit :: (MonadError m, Alternative m) => Error m -> m a -> m a
 commit err p = p <|> throwError err
 
 -- 

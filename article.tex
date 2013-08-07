@@ -325,7 +325,7 @@ initial implementation on our way to creating an error-reporting parser.
 The simple language we'll use as a motivation for this task is Woof, a 
 simple dialect of Lisp.
 
-The language definition of Woof in pseudo-BNF~\cite{bnf} is:
+The language definition of Woof in pseudo-BNF is:
 
 \begin{verbatim}
 Woof         :=   Form(+)
@@ -693,40 +693,43 @@ messages.
 \subsection{Type Class Preliminaries}
 Unfortunately, the standard MonadError instance for the \verb+Either+ datatype does
 not fit our needs -- it requires an \verb+Error+ constraint that we do not want.
-We'll implement our own MonadError type class, based on the
-standard one, and instances of it.  We'll need an instance for each member of
-our stack -- Either, StateT, and MaybeT: 
+We'll implement our own MonadError type class.  We'll need an instance for each member of
+our stack -- Either, StateT, and MaybeT:
 \begin{verbatim}
-class Monad m => MonadError e m | m -> e where
-  throwError :: e -> m a
-  catchError :: m a -> (e -> m a) -> m a
+{-# LANGUAGE FlexibleContexts, MultiParamTypeClasses,
+    FlexibleInstances, TypeFamilies #-}
 
-instance MonadError e (Either e) where
+class Monad m => MonadError m where
+  type Error m :: *
+  throwError :: Error m -> m a
+  catchError :: m a -> (Error m -> m a) -> m a
+
+instance MonadError (Either e) where
+  type Error (Either e) = e
   throwError               =  Left
   catchError  (Right x) _  =  Right x
   catchError  (Left e)  f  =  f e
   
-instance MonadError e m => MonadError e (StateT s m) where
+instance MonadError m => MonadError (StateT s m) where
+  type Error (StateT s m) = Error m
   throwError      =  lift . throwError
   catchError m f  =  StateT g
     where
       g s = catchError (runStateT m s) 
                        (\e -> runStateT (f e) s)
 
-instance MonadError e m => MonadError e (MaybeT m) where
+instance MonadError m => MonadError (MaybeT m) where
+  type Error (MaybeT m) = Error m
   throwError      =  lift . throwError
-  catchError m f  =  MaybeT $ catchError (runMaybeT m) 
+  catchError m f  =  MaybeT $ catchError (runMaybeT m)
                                          (runMaybeT . f)
 \end{verbatim}
 Note how the StateT and MaybeT instances don't really do anything with the
 errors; they just pass the error on through to the next level.  That's why they
-both require that the next lower level supports MonadError.  Also, this code 
-requires some additional extensions:
-\begin{itemize}
-  \item FlexibleInstances
-  \item FunctionalDependencies
-  \item UndecidableInstances 
-\end{itemize}
+both require that the next lower level supports MonadError.  This code uses
+type families to state what the error type is; explaining type families
+in more detail is out of scope for this article, but roughly, given some MonadError \verb|m|,
+you can write down the type of error that monad supports by saying \verb|Error m|.
 
 We'll also need an instance of Switch for MaybeT:
 \begin{verbatim}
@@ -755,10 +758,11 @@ The MonadError type class provides two useful combinators: \verb+throwError+ for
 generating errors and \verb+catchError+ for dealing with them.  We can ignore 
 the second because we don't need to recover from errors, just report them, 
 but when should an error be generated and what 
-data should it include?  \verb+throwError+ is too basic for our needs, so we'll 
+data should it include?  \verb+throwError+ will unconditionally throw an
+error, but often we will only want to conditionally throw an error. Thus, we
 introduce the \verb+commit+ combinator:
 \begin{verbatim}
-commit :: (MonadError e m, Alternative m) => e -> m a -> m a
+commit :: (MonadError m, Alternative m) => Error m -> m a -> m a
 commit err p = p <|> throwError err
 \end{verbatim}
 
@@ -880,8 +884,6 @@ Left "application: missing close parenthesis"
 Left "define: missing symbol"
 \end{verbatim}
 
-And so on.
-
 
 
 
@@ -912,8 +914,8 @@ runParser p ts = runMaybeT $ runStateT (runStateT p ts) (1, 1)
 \end{verbatim}
 
 Now that we have two separate state layers, we need to be sure not to mix them 
-up (fortunately, Haskell's type system will helpfully complain if I mess up);
-the \verb+lift+ method of the \verb+MonadTrans+ type class allows us to access
+up (fortunately, because the types of the states are different, Haskell's type system will helpfully complain if I mess up).
+The \verb+lift+ method of the \verb+MonadTrans+ type class allows us to access
 the position state:
 \begin{verbatim}
 getState :: Parser Char Pos
@@ -1011,10 +1013,6 @@ Left ("lambda: duplicate parameter names",(2,15))
 
 
 
-
-\Red{It's worth noting that up until this point, 
-we haven't talked about how transformers contribute to the design of the parser library.  
-Maybe give the juicy bits earlier.}
 
 \section{Stack Order}
 While the contents of a transformer stack is important, the order of the
@@ -1139,7 +1137,7 @@ This emphasizes some major advantages of using monad transformers:
  \item it's easy to change the composition and order of stacks
 \end{itemize}
 
-We benefitted from these advantages when many of the parsers didn't have to change 
+We could see these advantages when many of the parsers didn't have to change 
 at all from one version to the next (although some of their types did change).
 
 
@@ -1173,7 +1171,7 @@ features to our parsers using additional transformers, perhaps extending our
 parser to save partial results, so that if there's an error, it reports the
 progress that it had made before the error.  We could do that using a Writer
 transformer.  Or we check to make sure that all variables are in scope when
-they're used -- using a Reader transformer.  We could even capture whitespace
+they're used using a Reader transformer.  We could even capture whitespace
 and comment tokens, instead of just throwing them away, in case they contained
 valuable information.  And the best part of it is, most of the parsers we already
 wrote would continue to work fine without needing any modifications.  That
