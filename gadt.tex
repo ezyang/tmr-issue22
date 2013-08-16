@@ -173,7 +173,7 @@ Implementing this function is complicated. For example, processing \verb|AddInt|
 evaluate e = case e of
     AddInt e1 e2 -> case (evaluate e1, evaluate e2) of
         (Just (Left i1), Just (Left i2)) -> Just $ Left $ i1 + i2
-        _ -> error "AddInt takes two integers"
+        _ -> fail "AddInt takes two integers"
 \end{Verbatim}
 
 The conclusion is that we need to represent expressions using values of types parametrized by expression return value type. \italic{Phantom type} is a parametrized type whose parameters do not appear on the right-hand side of its definition. One can use them this way:
@@ -725,7 +725,7 @@ Additionally red-black tree satisfies the following invariants:
 \item For each node, all paths from that node to the leaf node contain the same number of black nodes. This number of black nodes is called the \italic{black height} of a node.
 \end{longenum}
 
-These invariants guarantee that tree is balanced. Indeed, the longest path from the root node (containing alternating red-black nodes) can only be twice as long as the shortest path (containing only red nodes). Thus basic operations (such as insertion and search) take $O(\log n)$ time in the worst case.
+These invariants guarantee that tree is balanced. Indeed, the longest path from the root node (containing alternating red-black nodes) can only be twice as long as the shortest path (containing only black nodes). Thus basic operations (such as insertion and search) take $O(\log n)$ time in the worst case.
 
 Insertion operation for red-black trees has the following structure:
 
@@ -821,7 +821,7 @@ type Tree a = Node a bh
 since normally when creating a new type in Haskell, every type variable that appears on the right-hand side of the definition must also appear on its left-hand side. One solution to this problem is usage of \italic{existential types} (this definition requires extension \verb|RankNTypes|):
 
 \begin{Verbatim}
-type Tree a = forall bh. Node a bh
+data Tree a = forall bh. Root (Node a bh)
 \end{Verbatim}
 
 It is also possible to do this with a GADT:
